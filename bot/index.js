@@ -44,6 +44,7 @@ function connect() {
   let backend = process.env.RAKNET || 'raknet-native';
   try { require('raknet-native'); } catch {
     backend = 'jsp-raknet';
+    require('./raknet-patch');
     const Module = require('module'), load = Module._load;
     Module._load = function (req, ...r) { return req === 'raknet-native' ? {} : load.call(this, req, ...r); };
   }
