@@ -30,3 +30,12 @@ patchFile('protocol/OpenConnectionRequest2.js', [[
 patchFile('Client.js', [[
   'packet.clientGUID = this.id;\n        packet.serverAddress',
   'packet.clientGUID = this.id;\n        packet.cookie = decodedPacket.cookie;\n        packet.serverAddress']]);
+
+// Big bursts (chunks right after spawn) overflow jsp-raknet's 256-slot windows. Packets past
+// the window were dropped but still ACKed, so the server never resent them and the
+// encryption counter drifted ("Checksum mismatch"). Bigger windows, and ACK only what we keep.
+patchFile('Connection.js', [
+  ['this.receiveWindow = new SlidingReceiveWindow(256);', 'this.receiveWindow = new SlidingReceiveWindow(16384);'],
+  ['this.reliableReceiveWindow = new SlidingOrderedWindow(256);', 'this.reliableReceiveWindow = new SlidingOrderedWindow(16384);'],
+  ['this.ackQueue.push(dataPacket.sequenceNumber);\n        this.receiveWindow.set(', 'if (dataPacket.sequenceNumber <= this.receiveWindow.windowEnd) this.ackQueue.push(dataPacket.sequenceNumber);\n        this.receiveWindow.set('],
+]);
