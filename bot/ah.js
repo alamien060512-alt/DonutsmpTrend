@@ -35,7 +35,7 @@ class AhDriver {
   say(cmd) {
     this.c.queue('command_request', {
       command: cmd.startsWith('/') ? cmd : '/' + cmd,
-      origin: { type: 'player', uuid: '', request_id: '', player_entity_id: 0 }, internal: false, version: 52,
+      origin: { type: 'player', uuid: '00000000-0000-0000-0000-000000000000', request_id: '', player_entity_id: 0n }, internal: false, version: '52',
     });
   }
   async open(cmd = '/ah') {
