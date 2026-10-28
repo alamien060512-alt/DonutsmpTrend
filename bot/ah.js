@@ -56,16 +56,25 @@ class AhDriver {
       custom_names: [], cause: -1,
     }] });
   }
-  // All text found in an item's NBT (name + lore lines), colour codes removed.
+  // Item NBT as a plain object: { display: { Name, Lore: [...] }, ench: [...] }, or {}.
+  plain(it) {
+    try {
+      const nbt = it && (it.extra && it.extra.nbt || it.nbt);
+      if (!nbt) return {};
+      return require('prismarine-nbt').simplify(nbt.nbt || nbt) || {};
+    } catch { return {}; }
+  }
+  // Display name, colour codes removed ('' when the item has none).
+  nameOf(it) {
+    const d = this.plain(it).display || {};
+    return String(d.Name || '').replace(/§./g, '').trim();
+  }
+  enchanted(it) { const p = this.plain(it); return !!((p.ench && p.ench.length) || (p.Enchantments && p.Enchantments.length)); }
+  // Name + lore lines as text, colour codes removed.
   textOf(it) {
-    const out = [];
-    const walk = (v) => {
-      if (typeof v === 'string') out.push(v.replace(/§./g, '').trim());
-      else if (Array.isArray(v)) v.forEach(walk);
-      else if (v && typeof v === 'object') Object.values(v).forEach(walk);
-    };
-    walk(it && (it.extra && it.extra.nbt || it.nbt));
-    return out.filter(Boolean);
+    const d = this.plain(it).display || {};
+    const lore = Array.isArray(d.Lore) ? d.Lore : (d.Lore ? [d.Lore] : []);
+    return [d.Name, ...lore].filter(Boolean).map((x) => String(x).replace(/§./g, '').trim());
   }
   // Price per listing: the first lore line that mentions "price" (or a $ amount) and has a number.
   priceOf(it) {

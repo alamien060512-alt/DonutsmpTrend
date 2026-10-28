@@ -109,6 +109,7 @@ async function scan() {
         const win = await ah.open('/ah ' + r.item.replace(/_/g, ' '));
         for (const [slot, it] of win.slots) {
           if (!it || !it.network_id) continue;
+          if (clean(ah.nameOf(it)) !== r.item || ah.enchanted(it)) continue; // only the exact, un-enchanted item
           const price = ah.priceOf(it), count = it.count || 1;
           const l = { item: r.item, price, count }, m = price > 0 && rules.matches(l);
           if (m) hits.push({ ...l, unit: m.unit, rule: r, slot });
@@ -173,7 +174,7 @@ async function run(line) {
       if (!state.connected) return 'not connected yet';
       const win = await ah.open('/ah ' + (a.join(' ') || 'diamond'));
       const rows = [...win.slots].filter(([, it]) => it && it.network_id).slice(0, 12)
-        .map(([slot, it]) => ({ slot, count: it.count, price: ah.priceOf(it), text: ah.textOf(it).join(' | ').slice(0, 300) }));
+        .map(([slot, it]) => ({ slot, name: ah.nameOf(it), count: it.count, price: ah.priceOf(it), enchanted: ah.enchanted(it), text: ah.textOf(it).join(' | ').slice(0, 200) }));
       ah.close();
       return rows.length ? rows : 'no items found in the window (slots: ' + win.slots.size + ')';
     }
