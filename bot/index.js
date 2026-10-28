@@ -34,8 +34,7 @@ const toListing = (r) => ({
 function authOptions() {
   const T = require('prismarine-auth').Titles;
   const t = { android: ['MinecraftAndroid', 'Android'], ios: ['MinecraftIOS', 'iOS'], playstation: ['MinecraftPlaystation', 'PlayStation'], switch: ['MinecraftNintendoSwitch', 'Nintendo'] }[process.env.AUTH_TITLE];
-  if (!t && !process.env.AUTH_FLOW) return {};
-  const [title, deviceType] = t || ['MinecraftNintendoSwitch', 'Nintendo'];
+  const [title, deviceType] = t || ['MinecraftAndroid', 'Android']; // Android is MinecraftAuth's default too
   return { flow: process.env.AUTH_FLOW || 'live', authTitle: T[title], deviceType };
 }
 

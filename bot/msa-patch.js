@@ -21,8 +21,8 @@ async function authDeviceCode(deviceCodeCallback) {
     let last = '';
     while (Date.now() < expires) {
       await sleep(Math.max(res.interval || 5, 5) * 1000);
-      const j = await fetch(Endpoints.live.tokenRequest + '?client_id=' + this.clientId,
-        form({ client_id: this.clientId, device_code: res.device_code, grant_type: 'urn:ietf:params:oauth:grant-type:device_code' })).then((x) => x.json()).catch((e) => ({ error: 'network', error_description: e.message }));
+      const j = await fetch(Endpoints.live.tokenRequest,
+        form({ client_id: this.clientId, device_code: res.device_code, grant_type: 'device_code' /* same as MinecraftAuth (RaphiMC) */ })).then((x) => x.json()).catch((e) => ({ error: 'network', error_description: e.message }));
       if (!j.error) { await this.updateCache(j); return { accessToken: j.access_token }; }
       if (j.error !== last) { console.log(`[msa] waiting (${j.error}) ${String(j.error_description || '').split('\r')[0].slice(0, 120)}`); last = j.error; }
       if (['expired_token', 'access_denied', 'authorization_declined'].includes(j.error)) throw new Error('Sign-in failed: ' + j.error);
