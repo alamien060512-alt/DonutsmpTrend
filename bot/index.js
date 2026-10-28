@@ -212,7 +212,8 @@ async function buy(h) {
     state.spent += typeof r.spent === 'number' ? r.spent : h.price;
     state.listed++;
     if (state.maxListings && state.listed >= state.maxListings) pause('listing limit reached (' + state.listed + '/' + state.maxListings + ')');
-    const slot = r.inventorySlot, price = rules.sellPrice(h.item, r.price / h.count, h.count);
+    const slot = r.inventorySlot, held = slot != null ? ah.inv.get(slot) : null;
+    const price = rules.sellPrice(h.item, r.price / h.count, held ? held.count : h.count); // /ah sell lists the whole stack in hand
     if (slot === null || slot === undefined) { log('bought, but could not find the item in the inventory; relist by hand'); return; }
     const rl = await relist(slot, price);
     log('relist result: ' + JSON.stringify(rl));
