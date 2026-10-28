@@ -78,7 +78,12 @@ async function connect() {
   client.on('loggingIn', () => log('sent login'));
   client.on('session', () => log('authenticated with Xbox'));
   client.on('error', (e) => { log('client error: ' + e.message); try { client.close(); } catch {} });
-  client.on('text', (p) => { if (p.message) log('chat: ' + String(p.message).slice(0, 120)); });
+  const clean = (t) => String(t).replace(/§./g, '').slice(0, 200);
+  client.on('text', (p) => { if (p.message) log(`chat[${p.type}]: ${clean(p.message)}${p.parameters && p.parameters.length ? ' ' + JSON.stringify(p.parameters) : ''}`); });
+  client.on('command_output', (p) => (p.output || []).forEach((o) => log(`cmd result (${o.success ? 'ok' : 'fail'}): ${clean(o.message_id)} ${JSON.stringify(o.parameters || [])}`)));
+  client.on('toast_request', (p) => log(`toast: ${clean(p.title)} ${clean(p.message)}`));
+  client.on('set_title', (p) => { if (p.text) log(`${p.type}: ${clean(p.text)}`); });
+  client.on('modal_form_request', (p) => log('form opened: ' + clean(p.data)));
 }
 
 // ---- trading ----
@@ -146,7 +151,7 @@ async function run(line) {
     case 'rules': return rules.list();
     case 'buy': { const p = parsePrice(a[1]); return rules.add(a[0], p, +a[2] || 2); }
     case 'drop': return rules.remove(a[0]);
-    case 'cmd': if (!client) return 'not connected'; ah.say(a.join(' ')); return 'sent';
+    case 'cmd': if (!client || !state.connected) return 'not connected yet'; ah.say(a.join(' ')); return 'sent; watch the log for the reply';
     case 'scan': return scan();
     case 'live': state.live = a[0] === 'on'; return { live: state.live };
     case 'quit': process.exit(0);
