@@ -30,6 +30,15 @@ const toListing = (r) => ({
   count: (r.item && +r.item.count) || 1, seller: r.seller && r.seller.name,
 });
 
+// AUTH_TITLE=android|ios|playstation|switch picks which Minecraft app identity signs in.
+function authOptions() {
+  const T = require('prismarine-auth').Titles;
+  const t = { android: ['MinecraftAndroid', 'Android'], ios: ['MinecraftIOS', 'iOS'], playstation: ['MinecraftPlaystation', 'PlayStation'], switch: ['MinecraftNintendoSwitch', 'Nintendo'] }[process.env.AUTH_TITLE];
+  if (!t && !process.env.AUTH_FLOW) return {};
+  const [title, deviceType] = t || ['MinecraftNintendoSwitch', 'Nintendo'];
+  return { flow: process.env.AUTH_FLOW || 'live', authTitle: T[title], deviceType };
+}
+
 // ---- bot connection (Xbox login: first run prints a microsoft.com/link code) ----
 function connect() {
   // Phones (Termux) can't build raknet-native; fall back to the pure-JS RakNet.
@@ -43,7 +52,7 @@ function connect() {
   client = bedrock.createClient({
     host: HOST, port: PORT, username: process.env.XBOX_ACCOUNT || 'bot',
     profilesFolder: './data/auth', offline: false, raknetBackend: backend, skipPing: backend === 'jsp-raknet', ...(process.env.BEDROCK_VERSION && { version: process.env.BEDROCK_VERSION }),
-    ...(process.env.AUTH_FLOW && { flow: process.env.AUTH_FLOW, authTitle: require('prismarine-auth').Titles.MinecraftNintendoSwitch, deviceType: 'Nintendo' }),
+    ...authOptions(),
     conLog: () => {},
   });
   const { AhDriver } = require('./ah');
