@@ -15,6 +15,9 @@ const API_PORT = +process.env.BOT_API_PORT || 8080;
 const SCAN_MS = +process.env.SCAN_MS || 15000;
 const state = { live: process.env.LIVE === '1', connected: false, spent: 0, log: [], holdings: [], prices: {} };
 const rules = new Rules();
+// A dead connection can still emit a late error; don't let that kill the bot.
+process.on('uncaughtException', (e) => log('uncaught: ' + (e && e.message)));
+process.on('unhandledRejection', (e) => log('unhandled: ' + (e && e.message)));
 let ah = null, client = null;
 
 const log = (m) => { const l = `${new Date().toISOString().slice(11, 19)} ${m}`; state.log.push(l); state.log = state.log.slice(-200); console.log(l); };
@@ -73,7 +76,7 @@ async function connect() {
   client.on('kick', (p) => log('KICKED by server: ' + (p.message || JSON.stringify(p))));
   client.on('loggingIn', () => log('sent login'));
   client.on('session', () => log('authenticated with Xbox'));
-  client.on('error', (e) => log('client error: ' + e.message));
+  client.on('error', (e) => { log('client error: ' + e.message); try { client.close(); } catch {} });
   client.on('text', (p) => { if (p.message) log('chat: ' + String(p.message).slice(0, 120)); });
 }
 
@@ -146,7 +149,7 @@ async function run(line) {
     case 'scan': return scan();
     case 'live': state.live = a[0] === 'on'; return { live: state.live };
     case 'quit': process.exit(0);
-    default: return 'unknown command; try help';
+    default: return line.trim().startsWith('/') ? 'to send an in-game command, type: cmd ' + line.trim() : 'unknown command; try help';
   }
 }
 
