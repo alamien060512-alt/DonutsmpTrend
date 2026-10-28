@@ -40,7 +40,7 @@ function authOptions() {
 
 // ---- bot connection (Xbox login: first run prints a microsoft.com/link code) ----
 let stubbed = false;
-function connect() {
+async function connect() {
   // Phones (Termux) can't build raknet-native; fall back to the pure-JS RakNet.
   let backend = process.env.RAKNET || 'raknet-native';
   try { if (stubbed) throw 0; require('raknet-native'); } catch {
@@ -54,9 +54,12 @@ function connect() {
     }
   }
   require('./msa-patch');
+  // jsp-raknet writes a malformed handshake packet when given a hostname, so use the IP.
+  const ip = (await require('dns').promises.lookup(HOST, { family: 4 })).address;
+  log(`server ${HOST} -> ${ip}:${PORT}`);
   const bedrock = require('bedrock-protocol'); // lazy so the API/console work without it
   client = bedrock.createClient({
-    host: HOST, port: PORT, username: process.env.XBOX_ACCOUNT || 'bot',
+    host: ip, port: PORT, username: process.env.XBOX_ACCOUNT || 'bot',
     profilesFolder: './data/auth', offline: false, raknetBackend: backend, skipPing: backend === 'jsp-raknet', ...(process.env.BEDROCK_VERSION && { version: process.env.BEDROCK_VERSION }),
     ...authOptions(),
     connectTimeout: 20000,
@@ -66,7 +69,7 @@ function connect() {
   ah = new AhDriver(client, log);
   client.on('join', () => { state.connected = true; log('joined server'); });
   client.on('spawn', () => log('spawned'));
-  client.on('close', () => { state.connected = false; log('disconnected; retry in 30s'); setTimeout(connect, 30000); });
+  client.on('close', () => { state.connected = false; log('disconnected; retry in 30s'); setTimeout(() => connect().catch((e) => log('connect failed: ' + e.message)), 30000); });
   client.on('kick', (p) => log('KICKED by server: ' + (p.message || JSON.stringify(p))));
   client.on('loggingIn', () => log('sent login'));
   client.on('session', () => log('authenticated with Xbox'));
@@ -168,7 +171,7 @@ http.createServer(async (req, res) => {
 if (require.main === module) {
   if (!KEY) console.log('No API key: reading the auction house in game instead.');
   log(state.live ? 'LIVE mode' : 'DRY RUN (set LIVE=1 to spend money)');
-  if (process.env.NO_CONNECT !== '1') connect();
+  if (process.env.NO_CONNECT !== '1') connect().catch((e) => log('connect failed: ' + e.message));
   setInterval(scan, SCAN_MS);
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, prompt: 'bot> ' });
   rl.prompt();
