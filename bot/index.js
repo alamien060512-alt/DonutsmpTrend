@@ -5,7 +5,7 @@
 //   | cmd <any /command> | scan | live on|off | quit      API: http://127.0.0.1:8080
 const http = require('http');
 const readline = require('readline');
-const { Rules, parsePrice, clean } = require('./strategy');
+const { Rules, parseBuy, clean } = require('./strategy');
 
 const KEY = process.env.DONUTSMP_API_KEY;
 const BASE = process.env.DONUTSMP_BASE || 'https://api.donutsmp.net/v1';
@@ -13,7 +13,7 @@ const HOST = process.env.SERVER_HOST || 'donutsmp.net';
 const PORT = +process.env.SERVER_PORT || 19132;
 const API_PORT = +process.env.BOT_API_PORT || 8080;
 const SCAN_MS = +process.env.SCAN_MS || 15000;
-const state = { live: process.env.LIVE === '1', connected: false, spent: 0, log: [], holdings: [], prices: {} };
+const state = { maxListings: +process.env.MAX_LISTINGS || 0, listed: 0, paused: null, live: process.env.LIVE === '1', connected: false, spent: 0, log: [], holdings: [], prices: {} };
 const rules = new Rules();
 // A dead connection can still emit a late error; don't let that kill the bot.
 process.on('uncaughtException', (e) => log('uncaught: ' + (e && e.message)));
@@ -79,7 +79,7 @@ async function connect() {
   client.on('session', () => log('authenticated with Xbox'));
   client.on('error', (e) => { log('client error: ' + e.message); try { client.close(); } catch {} });
   const clean = (t) => String(t).replace(/§./g, '').slice(0, 200);
-  client.on('text', (p) => { if (p.message) log(`chat[${p.type}]: ${clean(p.message)}${p.parameters && p.parameters.length ? ' ' + JSON.stringify(p.parameters) : ''}`); });
+  client.on('text', (p) => { if (p.message) watchChat(clean(p.message)); if (p.message) log(`chat[${p.type}]: ${clean(p.message)}${p.parameters && p.parameters.length ? ' ' + JSON.stringify(p.parameters) : ''}`); });
   client.on('command_output', (p) => (p.output || []).forEach((o) => log(`cmd result (${o.success ? 'ok' : 'fail'}): ${clean(o.message_id)} ${JSON.stringify(o.parameters || [])}`)));
   client.on('toast_request', (p) => log(`toast: ${clean(p.title)} ${clean(p.message)}`));
   client.on('set_title', (p) => { if (p.text) log(`${p.type}: ${clean(p.text)}`); });
@@ -88,8 +88,18 @@ async function connect() {
 
 // ---- trading ----
 let busy = false;
+function pause(why) { if (!state.paused) { state.paused = why; log('BUYING PAUSED: ' + why + ' (type resume to continue)'); } }
+// Chat hints: an auction-house-full message pauses buying; a sale frees a slot.
+function watchChat(msg) {
+  if (/(auction|listing|ah).*(full|limit|maximum|max)|(too many|cannot|can't|unable to).*(list|auction)|reached.*(limit|maximum)/i.test(msg)) pause('auction house full: ' + msg.slice(0, 80));
+  else if (/\bsold\b|purchased your|bought your/i.test(msg) && state.listed > 0) {
+    state.listed--;
+    if (state.paused && state.paused.startsWith('listing limit') && state.listed < state.maxListings) { state.paused = null; log('slot freed, buying resumed'); }
+  }
+}
+
 async function scan() {
-  if (busy || !rules.list().length) return [];
+  if (busy || state.paused || !rules.list().length) return [];
   busy = true;
   try {
     const hits = [];
@@ -135,10 +145,12 @@ async function buy(h) {
     ah.click(slot); await new Promise((r) => setTimeout(r, 600));
     ah.click(slot); // confirm screen reuses the first slot in the stock UI
     state.spent += h.price;
+    state.listed++;
+    if (state.maxListings && state.listed >= state.maxListings) pause('listing limit reached (' + state.listed + '/' + state.maxListings + ')');
     state.holdings.push({ item: h.item, count: h.count, paidUnit: h.unit, t: Date.now() });
     ah.close();
     ah.say(`/ah sell ${rules.sellPrice(h.item, h.unit, h.count)}`);
-    log('relisted at 2x');
+    log('relisted');
   } catch (e) { log('buy failed: ' + e.message); ah.close(); }
 }
 
@@ -146,10 +158,14 @@ async function buy(h) {
 async function run(line) {
   const [c, ...a] = line.trim().split(/\s+/);
   switch ((c || '').toLowerCase()) {
-    case 'help': return 'status | rules | buy <item> <maxPrice> [multiple] | drop <item> | cmd </command> | scan | live on|off | quit';
-    case 'status': return { connected: state.connected, live: state.live, spent: state.spent, rules: rules.list().length };
+    case 'help': return 'status | rules | buy <item> <max> [sell <price> | <multiple>] | drop <item> | limit <n> | pause | resume | listed <n> | cmd </command> | scan | live on|off | quit';
+    case 'status': return { connected: state.connected, live: state.live, spent: state.spent, rules: rules.list().length, listed: state.listed, maxListings: state.maxListings || 'none', paused: state.paused };
     case 'rules': return rules.list();
-    case 'buy': { const p = parsePrice(a[1]); return rules.add(a[0], p, +a[2] || 2); }
+    case 'buy': { const b = parseBuy(a); return rules.add(b.item, b.maxPrice, b.sellMultiple, b.sellUnit); }
+    case 'limit': state.maxListings = +a[0] || 0; return { maxListings: state.maxListings, listed: state.listed };
+    case 'resume': state.paused = null; return 'buying resumed';
+    case 'pause': pause('paused by you'); return 'paused';
+    case 'listed': state.listed = +a[0] || 0; return { listed: state.listed };
     case 'drop': return rules.remove(a[0]);
     case 'cmd': if (!client || !state.connected) return 'not connected yet'; ah.say(a.join(' ')); return 'sent; watch the log for the reply';
     case 'scan': return scan();

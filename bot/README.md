@@ -18,3 +18,12 @@ HTTP API on `127.0.0.1:8080` with CORS open: `GET /status /rules /log /holdings 
 Caveats: the auction GUI driver (`ah.js`) is untested against the live server.
 Slot choices and the confirm click are guesses until you try them in dry/live runs.
 Running a trading bot may break DonutSMP's rules; use at your own risk.
+
+## Buy / sell rules
+    buy diamond 5k sell 5.1k    buy at <= 5k each, relist at a fixed 5.1k each
+    buy diamond 5k 1.02         relist at 1.02x what you paid
+    buy diamond 5k              relist at 2x (default)
+    limit 20                    stop buying once 20 listings are active (0 = no limit)
+    pause | resume              stop / continue buying; `listed <n>` corrects the listing count
+
+Buying also pauses by itself when the server says the auction house is full.
