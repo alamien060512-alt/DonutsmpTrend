@@ -12,6 +12,14 @@ class AhDriver {
     this.waiters = [];
     this.events = [];         // recent window events, shown by inspectbuy / on timeout
     const ev = (e, extra) => { this.events.push(`${new Date().toISOString().slice(14, 23)} ${e} ${extra || ''}`.trim()); this.events = this.events.slice(-25); };
+    this.other = new Map();   // contents of windows we did not open ourselves (e.g. a confirm menu)
+    this.pkts = {};
+    client.on('packet', (d) => { const n = d && d.data && d.data.name; if (n) this.pkts[n] = (this.pkts[n] || 0) + 1; });
+    const noteOther = (id, slot, it) => {
+      if (['inventory', 'offhand', 'armor', 'ui', 'hotbar', 'fixed_inventory', 'creative', 'first', 'none'].includes(String(id))) return;
+      if (!this.other.has(id)) this.other.set(id, new Map());
+      this.other.get(id).set(slot, it);
+    };
     this.responses = [];      // item_stack_response statuses, for inspection
     client.on('item_stack_response', (p) => { ev('item_stack_response', (p.responses || []).map((r) => r.status).join(',')); for (const r of p.responses || []) this.responses.push({ status: r.status, id: r.request_id }); });
     client.on('container_open', (p) => {
@@ -21,12 +29,14 @@ class AhDriver {
     });
     client.on('container_close', (p) => { ev('container_close', `id=${p.window_id} (ours=${this.win && this.win.id})`); if (this.win && p.window_id === this.win.id) this.win = null; });
     client.on('inventory_content', (p) => {
+      (p.input || []).forEach((it, i) => noteOther(p.window_id, i, it));
       ev('inventory_content', `id=${p.window_id} items=${(p.input || []).filter((x) => x && x.network_id).length}/${(p.input || []).length}`);
       if (!this.win || p.window_id !== this.win.id) return;
       p.input.forEach((it, i) => this.win.slots.set(i, it));
       this._wake();
     });
     client.on('inventory_slot', (p) => {
+      noteOther(p.window_id, p.slot, p.item);
       if (this.win && p.window_id === this.win.id) { this.win.slots.set(p.slot, p.item); this._wake(); }
     });
   }
@@ -101,6 +111,20 @@ class AhDriver {
     const items = [...this.win.slots].filter(([, it]) => it && it.network_id)
       .map(([slot, it]) => ({ slot, name: this.nameOf(it), count: it.count, text: this.textOf(it).join(' | ').slice(0, 160) }));
     return { window: { id: this.win.id, type: this.win.type, slots: this.win.slots.size }, items };
+  }
+  // Items of every extra window seen, with their slot numbers.
+  describeOthers() {
+    const out = {};
+    for (const [id, slots] of this.other) {
+      out['window ' + id] = [...slots].filter(([, it]) => it && it.network_id)
+        .map(([slot, it]) => ({ slot, name: this.nameOf(it), count: it.count, text: this.textOf(it).join(' | ').slice(0, 160) }));
+    }
+    return out;
+  }
+  // Packet counts since the last reset, without the noisy world/entity ones.
+  interestingPackets() {
+    const noisy = /chunk|entity|time|latency|attributes|level_|sound|move_|block|biome|score|player_list|add_player|animate|actor|tick|particle|event|camera|health|mob_/;
+    return Object.fromEntries(Object.entries(this.pkts).filter(([n]) => !noisy.test(n)));
   }
   close() {
     if (this.win) this.c.queue('container_close', { window_id: this.win.id, window_type: this.win.type, server: false });

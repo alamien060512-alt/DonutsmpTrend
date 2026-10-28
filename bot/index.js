@@ -186,11 +186,11 @@ async function run(line) {
       const hit = [...win.slots].filter(([, it]) => it && it.network_id && clean(ah.nameOf(it)) === item && !ah.enchanted(it))
         .sort((x, y) => ah.priceOf(x[1]) - ah.priceOf(y[1]))[0];
       if (!hit) { ah.close(); return 'no plain ' + item + ' listing found'; }
-      ah.responses.length = 0;
+      ah.responses.length = 0; ah.other.clear(); ah.pkts = {};
       const beforeId = win.id;
       ah.click(hit[0]);
       await new Promise((r) => setTimeout(r, 2500));
-      const out = { clickedSlot: hit[0], clickedPrice: ah.priceOf(hit[1]), windowChanged: !!ah.win && ah.win.id !== beforeId, responses: ah.responses.slice(0, 5), events: ah.events.slice(-12), after: ah.describe() };
+      const out = { clickedSlot: hit[0], clickedPrice: ah.priceOf(hit[1]), windowChanged: !!ah.win && ah.win.id !== beforeId, responses: ah.responses.slice(0, 5), events: ah.events.slice(-12), packets: ah.interestingPackets(), otherWindows: ah.describeOthers(), after: ah.describe() };
       ah.close();
       return out;
     }
