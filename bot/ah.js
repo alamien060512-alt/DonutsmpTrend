@@ -10,14 +10,18 @@ class AhDriver {
     this.win = null;          // { id, type, slots: Map<slot,item> }
     this.reqId = -1;          // item_stack_request ids are negative and decrease
     this.waiters = [];
+    this.events = [];         // recent window events, shown by inspectbuy / on timeout
+    const ev = (e, extra) => { this.events.push(`${new Date().toISOString().slice(14, 23)} ${e} ${extra || ''}`.trim()); this.events = this.events.slice(-25); };
     this.responses = [];      // item_stack_response statuses, for inspection
-    client.on('item_stack_response', (p) => { for (const r of p.responses || []) this.responses.push({ status: r.status, id: r.request_id }); });
+    client.on('item_stack_response', (p) => { ev('item_stack_response', (p.responses || []).map((r) => r.status).join(',')); for (const r of p.responses || []) this.responses.push({ status: r.status, id: r.request_id }); });
     client.on('container_open', (p) => {
+      ev('container_open', `id=${p.window_id} type=${p.window_type}`);
       this.win = { id: p.window_id, type: p.window_type, slots: new Map() };
       this._wake();
     });
-    client.on('container_close', (p) => { if (this.win && p.window_id === this.win.id) this.win = null; });
+    client.on('container_close', (p) => { ev('container_close', `id=${p.window_id} (ours=${this.win && this.win.id})`); if (this.win && p.window_id === this.win.id) this.win = null; });
     client.on('inventory_content', (p) => {
+      ev('inventory_content', `id=${p.window_id} items=${(p.input || []).filter((x) => x && x.network_id).length}/${(p.input || []).length}`);
       if (!this.win || p.window_id !== this.win.id) return;
       p.input.forEach((it, i) => this.win.slots.set(i, it));
       this._wake();
@@ -41,8 +45,12 @@ class AhDriver {
     });
   }
   async open(cmd = '/ah') {
-    this.win = null; this.say(cmd);
-    await this._until(() => this.win && this.win.slots.size > 0);
+    this.close();               // tell the server to drop any window we may still hold
+    this.win = null; this.events.push('-- open ' + cmd);
+    await new Promise((r) => setTimeout(r, 400));
+    this.say(cmd);
+    try { await this._until(() => this.win && this.win.slots.size > 0); }
+    catch { throw new Error('timeout waiting for the window. Recent events: ' + this.events.slice(-8).join(' | ')); }
     return this.win;
   }
   nameOf(it) { return clean(it && (it.network_id ? it.__name || it.name : '') || ''); }

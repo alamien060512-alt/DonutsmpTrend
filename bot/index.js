@@ -190,7 +190,7 @@ async function run(line) {
       const beforeId = win.id;
       ah.click(hit[0]);
       await new Promise((r) => setTimeout(r, 2500));
-      const out = { clickedSlot: hit[0], clickedPrice: ah.priceOf(hit[1]), windowChanged: !!ah.win && ah.win.id !== beforeId, responses: ah.responses.slice(0, 5), after: ah.describe() };
+      const out = { clickedSlot: hit[0], clickedPrice: ah.priceOf(hit[1]), windowChanged: !!ah.win && ah.win.id !== beforeId, responses: ah.responses.slice(0, 5), events: ah.events.slice(-12), after: ah.describe() };
       ah.close();
       return out;
     }
