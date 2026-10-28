@@ -64,9 +64,8 @@ class AhDriver {
     return this.win;
   }
   nameOf(it) { return clean(it && (it.network_id ? it.__name || it.name : '') || ''); }
-  // Click slot (Java left-click equals Bedrock take of the full stack into the cursor).
-  click(slot, count) {
-    const it = this.win.slots.get(slot);
+  // Click an item in a chest-style window (Java left-click = Bedrock "take" into the cursor).
+  clickItem(it, slot, count) {
     const id = this.reqId; this.reqId -= 2;
     this.c.queue('item_stack_request', { requests: [{
       request_id: id,
@@ -76,34 +75,18 @@ class AhDriver {
       custom_names: [], cause: -1,
     }] });
   }
-  // Item NBT as a plain object: { display: { Name, Lore: [...] }, ench: [...] }, or {}.
-  plain(it) {
-    try {
-      const nbt = it && (it.extra && it.extra.nbt || it.nbt);
-      if (!nbt) return {};
-      return require('prismarine-nbt').simplify(nbt.nbt || nbt) || {};
-    } catch { return {}; }
-  }
-  // Display name, colour codes removed ('' when the item has none).
-  nameOf(it) {
-    const d = this.plain(it).display || {};
-    return String(d.Name || '').replace(/§./g, '').trim();
-  }
-  enchanted(it) { const p = this.plain(it); return !!((p.ench && p.ench.length) || (p.Enchantments && p.Enchantments.length)); }
-  // Name + lore lines as text, colour codes removed.
-  textOf(it) {
-    const d = this.plain(it).display || {};
-    const lore = Array.isArray(d.Lore) ? d.Lore : (d.Lore ? [d.Lore] : []);
-    return [d.Name, ...lore].filter(Boolean).map((x) => String(x).replace(/§./g, '').trim());
-  }
-  // Price per listing: the first lore line that mentions "price" (or a $ amount) and has a number.
-  priceOf(it) {
-    const lines = this.textOf(it);
-    const line = lines.find((l) => /price/i.test(l) && /\d/.test(l)) || lines.find((l) => /\$\s*[\d]/.test(l));
-    if (!line) return NaN;
-    const m = /\$?\s*([\d][\d,]*(?:\.\d+)?)\s*([kmbKMB]?)/.exec(line.replace(/^.*?price\s*:?/i, ''));
-    if (!m) return NaN;
-    return parseFloat(m[1].replace(/,/g, '')) * ({ '': 1, k: 1e3, m: 1e6, b: 1e9 })[m[2].toLowerCase()];
+  click(slot, count) { this.clickItem(this.win.slots.get(slot), slot, count); }
+  // The confirm menu the server opens after a listing click: { id, confirm:{slot,item}, cancel:{slot,item}, shown:{slot,item} }.
+  confirmMenu() {
+    for (const [id, slots] of this.other) {
+      const find = (name) => [...slots].find(([, it]) => it && it.network_id && this.nameOf(it).toLowerCase() === name);
+      const ok = find('confirm'), no = find('cancel');
+      if (ok && no) {
+        const shown = [...slots].find(([sl, it]) => it && it.network_id && sl !== ok[0] && sl !== no[0]);
+        return { id, confirm: { slot: ok[0], item: ok[1] }, cancel: { slot: no[0], item: no[1] }, shown: shown && { slot: shown[0], item: shown[1] } };
+      }
+    }
+    return null;
   }
   // Describe the open window: id, type and every non-empty slot (name, count, text).
   describe() {

@@ -2,7 +2,7 @@
 //   DONUTSMP_API_KEY=xxx node bot/index.js            (dry run, never spends)
 //   LIVE=1 ... node bot/index.js                       (really buys / sells)
 // Console commands: help | status | rules | buy <item> <maxPrice> [x2] | drop <item>
-//   | cmd <any /command> | scan | peek <item> | inspectbuy <item> | live on|off | quit      API: http://127.0.0.1:8080
+//   | cmd <any /command> | scan | buynow <item> <max> yes | peek <item> | inspectbuy <item> | live on|off | quit      API: http://127.0.0.1:8080
 const http = require('http');
 const readline = require('readline');
 const { Rules, parseBuy, clean } = require('./strategy');
@@ -136,29 +136,60 @@ async function scan() {
   } catch (e) { log('scan failed: ' + e.message); return []; } finally { busy = false; }
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function waitFor(pred, ms) { const end = Date.now() + ms; while (Date.now() < end) { const v = pred(); if (v) return v; await sleep(100); } return null; }
+
+// Read the balance by running /bal and parsing "You have $ 1,478,100".
+async function balance() {
+  const since = Date.now();
+  ah.say('/bal');
+  const m = await waitFor(() => state.recentChat.find((c) => c.t >= since && /you have \$\s*([\d,\.]+)/i.test(c.msg)), 4000);
+  return m ? parseFloat(/you have \$\s*([\d,\.]+)/i.exec(m.msg)[1].replace(/,/g, '')) : NaN;
+}
+
+// Buy the cheapest plain `item` listing at or under maxUnit per item. Two clicks: the listing, then Confirm.
+async function purchase(item, maxUnit) {
+  const win = await ah.open('/ah ' + item.replace(/_/g, ' '));
+  const cands = [...win.slots].filter(([, it]) => it && it.network_id && clean(ah.nameOf(it)) === item && !ah.enchanted(it))
+    .map(([slot, it]) => ({ slot, it, price: ah.priceOf(it), count: it.count || 1 }))
+    .filter((c) => c.price > 0 && c.price / c.count <= maxUnit)
+    .sort((x, y) => x.price / x.count - y.price / y.count);
+  if (!cands.length) { ah.close(); return { ok: false, why: 'no listing at or under ' + maxUnit } };
+  const c = cands[0];
+  const before = await balance();
+  ah.other.clear();
+  log(`clicking listing: slot ${c.slot}, ${c.price} for ${c.count}`);
+  ah.click(c.slot);
+  const menu = await waitFor(() => ah.confirmMenu(), 4000);
+  if (!menu) { ah.close(); return { ok: false, why: 'no confirm menu appeared', events: ah.events.slice(-8) }; }
+  // Make sure the menu shows the listing we meant to buy before confirming.
+  const shownPrice = menu.shown ? ah.priceOf(menu.shown.item) : NaN, shownName = menu.shown ? clean(ah.nameOf(menu.shown.item)) : '';
+  if (shownName !== item || !(shownPrice > 0) || shownPrice / c.count > maxUnit * 1.001) {
+    ah.clickItem(menu.cancel.item, menu.cancel.slot);
+    ah.close();
+    return { ok: false, why: `confirm menu shows ${shownName} @ ${shownPrice}, not what we expected; cancelled` };
+  }
+  const since = Date.now();
+  log(`confirming: ${item} for ${shownPrice}`);
+  ah.clickItem(menu.confirm.item, menu.confirm.slot);
+  await sleep(2500);
+  const chat = state.recentChat.filter((m) => m.t >= since).map((m) => m.msg);
+  ah.close();
+  const after = await balance();
+  const spent = before - after;
+  return { ok: spent > 0, spent: isNaN(spent) ? 'unknown' : spent, price: shownPrice, balanceBefore: before, balanceAfter: after, chat };
+}
+
 async function buy(h) {
   log(`${state.live ? 'BUY' : 'DRY-BUY'} ${h.count}x ${h.item} @ ${h.unit.toFixed(2)}/ea (total ${h.price}) -> relist ${rules.sellPrice(h.item, h.unit, h.count)}`);
   if (!state.live || !state.connected) return;
   try {
-    const win = await ah.open('/ah ' + h.item.replace(/_/g, ' '));
-    // Re-read the window and click the cheapest matching listing at or under the rule price.
-    const cands = [...win.slots].filter(([, it]) => it && it.network_id && clean(ah.nameOf(it)) === h.item && !ah.enchanted(it))
-      .map(([slot, it]) => ({ slot, price: ah.priceOf(it), count: it.count || 1 }))
-      .filter((c) => c.price > 0 && c.price / c.count <= h.rule.maxPrice)
-      .sort((x, y) => x.price / x.count - y.price / y.count);
-    if (!cands.length) throw new Error('listing is gone');
-    const c = cands[0], since = Date.now();
-    log(`clicking slot ${c.slot} (${c.price} for ${c.count}); "no confirmation" must be ON in your AH settings`);
-    ah.click(c.slot);   // with no-confirmation on, one click buys
-    await new Promise((r) => setTimeout(r, 3000));
-    const msgs = state.recentChat.filter((m) => m.t >= since).map((m) => m.msg);
-    log('after click, chat: ' + (msgs.join(' // ') || '(nothing)'));
-    if (msgs.some((m) => /not enough|cannot afford|already sold|no longer|doesn't exist|failed/i.test(m))) throw new Error('purchase refused: ' + msgs.join(' '));
-    state.spent += c.price;
+    const r = await purchase(h.item, h.rule.maxPrice);
+    log('purchase result: ' + JSON.stringify(r));
+    if (!r.ok) return;
+    state.spent += typeof r.spent === 'number' ? r.spent : h.price;
     state.listed++;
     if (state.maxListings && state.listed >= state.maxListings) pause('listing limit reached (' + state.listed + '/' + state.maxListings + ')');
-    ah.close();
-    // TODO: select the bought item in the hotbar before /ah sell; not implemented yet.
     log('bought. NOT relisting automatically yet: relist by hand with  cmd /ah sell <price>  (item in hand)');
   } catch (e) { log('buy failed: ' + e.message); ah.close(); }
 }
@@ -178,6 +209,12 @@ async function run(line) {
     case 'drop': return rules.remove(a[0]);
     case 'cmd': if (!client || !state.connected) return 'not connected yet'; ah.say(a.join(' ')); return 'sent; watch the log for the reply';
     case 'scan': return scan();
+    case 'buynow': { // buynow <item> <maxPrice> yes : really buys the cheapest plain listing at or under maxPrice per item
+      if (!state.connected) return 'not connected yet';
+      if (a[a.length - 1] !== 'yes') return 'This REALLY buys. Type: buynow <item> <maxPrice> yes';
+      const b = parseBuy(a.slice(0, 2));
+      return purchase(clean(b.item), b.maxPrice);
+    }
     case 'inspectbuy': { // inspectbuy <item> yes: clicks the cheapest listing. WITH "no confirmation" ON IN-GAME THIS BUYS IT.
       if (!state.connected) return 'not connected yet';
       if (a[a.length - 1] !== 'yes') return 'This clicks the cheapest listing, which BUYS it if "no confirmation" is on in your AH settings. Type: inspectbuy <item> yes';
