@@ -30,3 +30,12 @@ c2.emit('inventory_content', { window_id: 6, input: [it(8, 1)] });
 ah2.closeAll();
 assert.ok(out.some(([n, p]) => n === 'container_close' && p.window_id === 6));
 console.log('window closing ok');
+
+// No close ping-pong: after we close a window ourselves, the server's echo is not answered again.
+const c3 = new EventEmitter(); const o3 = []; c3.queue = (n, p) => o3.push([n, p]); c3.entityId = 1n;
+const ah3 = new AhDriver(c3, () => {});
+c3.emit('inventory_content', { window_id: 5, input: [it(7, 1)] });
+ah3.closeWindow(5); assert.strictEqual(o3.length, 1);
+c3.emit('container_close', { window_id: 5, window_type: 'container' });   // server echoes our close
+assert.strictEqual(o3.length, 1);
+console.log('no close ping-pong ok');

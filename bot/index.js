@@ -156,6 +156,7 @@ async function balance() {
 
 // Buy the cheapest plain `item` listing at or under maxUnit per item. Two clicks: the listing, then Confirm.
 async function purchase(item, maxUnit) {
+  const before = await balance();      // read it first: the AH window can refresh while we wait
   const win = await ah.open('/ah ' + item.replace(/_/g, ' '));
   const cands = [...win.slots].filter(([, it]) => it && it.network_id && clean(ah.nameOf(it)) === item && !ah.enchanted(it))
     .map(([slot, it]) => ({ slot, it, price: ah.priceOf(it), count: it.count || 1 }))
@@ -163,11 +164,10 @@ async function purchase(item, maxUnit) {
     .sort((x, y) => x.price / x.count - y.price / y.count);
   if (!cands.length) { ah.close(); return { ok: false, why: 'no listing at or under ' + maxUnit } };
   const c = cands[0];
-  const before = await balance();
   const inv0 = ah.snapshot();
   ah.other.clear();
   log(`clicking listing: slot ${c.slot}, ${c.price} for ${c.count}`);
-  ah.click(c.slot);
+  ah.clickItem(c.it, c.slot);           // the exact item we picked, not a fresh lookup
   const menu = await waitFor(() => ah.confirmMenu(), 4000);
   if (!menu) { ah.close(); return { ok: false, why: 'no confirm menu appeared', events: ah.events.slice(-8) }; }
   // Make sure the menu shows the listing we meant to buy before confirming.

@@ -12,6 +12,7 @@ class AhDriver {
     this.waiters = [];
     this.events = [];         // recent window events, shown by inspectbuy / on timeout
     const ev = (e, extra) => { this.events.push(`${new Date().toISOString().slice(14, 23)} ${e} ${extra || ''}`.trim()); this.events = this.events.slice(-25); };
+    this.sentClose = new Map(); // window id -> when we last sent a close, to avoid close ping-pong
     this.other = new Map();   // contents of windows we did not open ourselves (e.g. a confirm menu)
     this.pkts = {};
     this.timeline = [];       // every non-noisy packet with a short summary, for diagnosing a failed step
@@ -50,7 +51,10 @@ class AhDriver {
     });
     client.on('container_close', (p) => {
       // A real client answers a server-side close; otherwise the server may think a menu is still open.
-      try { client.queue('container_close', { window_id: p.window_id, window_type: p.window_type, server: false }); } catch {}
+      const mine = this.sentClose.get(p.window_id);
+      if (!(mine && Date.now() - mine < 3000)) {           // don't answer the echo of a close we just sent
+        try { client.queue('container_close', { window_id: p.window_id, window_type: p.window_type, server: false }); this.sentClose.set(p.window_id, Date.now()); } catch {}
+      }
       this.other.delete(p.window_id);
       this.container_close_inner(p);
     });
@@ -190,7 +194,7 @@ class AhDriver {
   }
   // Close one window by id (e.g. a confirm menu); safe to call for an id the server already closed.
   closeWindow(id) {
-    try { this.c.queue('container_close', { window_id: id, window_type: 'container', server: false }); } catch {}
+    try { this.c.queue('container_close', { window_id: id, window_type: 'container', server: false }); this.sentClose.set(id, Date.now()); } catch {}
     this.other.delete(id);
     if (this.win && this.win.id === id) this.win = null;
   }
