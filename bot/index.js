@@ -43,6 +43,7 @@ function connect() {
   client = bedrock.createClient({
     host: HOST, port: PORT, username: process.env.XBOX_ACCOUNT || 'bot',
     profilesFolder: './data/auth', offline: false, raknetBackend: backend, skipPing: backend === 'jsp-raknet', ...(process.env.BEDROCK_VERSION && { version: process.env.BEDROCK_VERSION }),
+    ...(process.env.AUTH_FLOW && { flow: process.env.AUTH_FLOW, authTitle: require('prismarine-auth').Titles.MinecraftNintendoSwitch, deviceType: 'Nintendo' }),
     conLog: () => {},
   });
   const { AhDriver } = require('./ah');
