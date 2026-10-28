@@ -7,6 +7,9 @@ const http = require('http');
 const readline = require('readline');
 const { Rules, parseBuy, parsePrice, clean } = require('./strategy');
 const { Ledger } = require('./ledger');
+const { Market, Watchlist, pretty } = require('./market');
+const fs = require('fs');
+const path = require('path');
 
 const KEY = process.env.DONUTSMP_API_KEY;
 const BASE = process.env.DONUTSMP_BASE || 'https://api.donutsmp.net/v1';
@@ -24,6 +27,12 @@ let ah = null, client = null;
 const log = (m) => { const l = `${new Date().toISOString().slice(11, 19)} ${m}`; state.log.push(l); state.log = state.log.slice(-200); console.log(l); };
 
 const ledger = new Ledger(log);
+const market = new Market(log);
+const watch = new Watchlist();
+const MARKET_MS = +process.env.MARKET_MS || 7000;     // pause between in-game price searches
+// One auction-house job at a time: trading, manual commands and the price scanner share one window.
+let ahChain = Promise.resolve();
+function withAh(fn) { const run = ahChain.then(fn, fn); ahChain = run.catch(() => {}); return run; }
 
 async function api(p) {
   const r = await fetch(BASE + p, { headers: { Authorization: 'Bearer ' + KEY, Accept: 'application/json' } });
@@ -233,10 +242,24 @@ async function buy(h) {
 }
 
 // ---- commands (console + API) ----
+const LOCKED = new Set(['scan', 'buynow', 'sellnow', 'peek', 'inspectbuy']);
 async function run(line) {
+  const c = (line.trim().split(/\s+/)[0] || '').toLowerCase();
+  return LOCKED.has(c) ? withAh(() => runInner(line)) : runInner(line);
+}
+async function runInner(line) {
   const [c, ...a] = line.trim().split(/\s+/);
   switch ((c || '').toLowerCase()) {
-    case 'help': return 'status | rules | buy <item> <max> [sell <price> | <multiple>] | drop <item> | limit <n> | pause | resume | listed <n> | cmd </command> | scan | live on|off | quit';
+    case 'watch': { // watch | watch add <item...> | watch remove <item>
+      if (a[0] === 'add') return { added: a.slice(1).map((x) => [x, watch.add(x)]), watchlist: watch.items.length };
+      if (a[0] === 'remove') return { removed: watch.remove(a[1] || ''), watchlist: watch.items.length };
+      return watch.items;
+    }
+    case 'market': { // market on | off | status
+      if (a[0] === 'on') market.on = true; else if (a[0] === 'off') { market.on = false; market.save(); }
+      return market.status(watch);
+    }
+    case 'help': return 'market on|off | watch [add|remove <item>] | trades | status | rules | buy <item> <max> [sell <price> | <multiple>] | drop <item> | limit <n> | pause | resume | listed <n> | cmd </command> | scan | live on|off | quit';
     case 'status': return { connected: state.connected, live: state.live, spent: state.spent, rules: rules.list().length, listed: state.listed, maxListings: state.maxListings || 'none', paused: state.paused };
     case 'rules': return rules.list();
     case 'buy': { const b = parseBuy(a); return rules.add(b.item, b.maxPrice, b.sellMultiple, b.sellUnit); }
@@ -292,28 +315,97 @@ async function run(line) {
 }
 
 // ---- HTTP API (CORS open, for your future live-price website) ----
+// ---- price board scanners ----
+// In-game: search each watched item in /ah (sorted cheapest first) and record the plain listings it shows.
+async function marketGuiLoop() {
+  for (;;) {
+    if (!market.on || !state.connected) { await sleep(2000); continue; }
+    for (const item of watch.items.slice()) {
+      if (!market.on || !state.connected) break;
+      market.current = item;
+      try {
+        await withAh(async () => {
+          const win = await ah.open('/ah ' + item.replace(/_/g, ' '), 2);
+          const groups = new Map();
+          for (const [, it] of win.slots) {
+            if (!it || !it.network_id) continue;
+            const name = ah.nameOf(it); if (!name || ah.enchanted(it)) continue;
+            const price = ah.priceOf(it); if (!(price > 0)) continue;
+            const k = clean(name), g = groups.get(k) || { name, units: [] };
+            g.units.push(price / (it.count || 1)); groups.set(k, g);
+          }
+          for (const [k, g] of groups) market.record(k, g.name, g.units, 'ingame');
+          ah.close();
+        });
+      } catch (e) { log(`market: ${item}: ${String(e.message).slice(0, 90)}`); }
+      await sleep(MARKET_MS);
+    }
+    market.passes++; market.current = null; market.save();
+  }
+}
+// API key set: read many pages of the official listings endpoint at once (a sample of the whole market).
+async function marketApiLoop() {
+  const pages = +process.env.PAGES || 10, every = +process.env.MARKET_API_MS || 60000;
+  for (;;) {
+    if (market.on) {
+      const groups = new Map();
+      for (let p = 1; p <= pages; p++) {
+        let rows; try { rows = rowsOf(await api('/auction/list/' + p)); } catch (e) { log('market api: ' + e.message); break; }
+        if (!rows.length) break;
+        for (const r of rows) { const l = toListing(r); if (l.item && l.price > 0) (groups.get(l.item) || groups.set(l.item, []).get(l.item)).push(l.price / l.count); }
+        await sleep(1400);
+      }
+      for (const [k, units] of groups) market.record(k, pretty(k), units, 'api');
+      market.passes++; market.save();
+    }
+    await sleep(every);
+  }
+}
+
+const PUBLIC_READ = /^\/(market|prices)(\/|$)/;   // read-only price data may be fetched from other websites
 http.createServer(async (req, res) => {
-  const send = (o, c = 200) => { res.writeHead(c, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(o)); };
   const u = new URL(req.url, 'http://x');
+  if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(req.headers.host || '')) { res.writeHead(403); return res.end('forbidden host'); } // blocks DNS-rebinding
+  const send = (o, c = 200) => {
+    const h = { 'content-type': 'application/json' };
+    if (PUBLIC_READ.test(u.pathname)) h['access-control-allow-origin'] = '*';
+    res.writeHead(c, h); res.end(JSON.stringify(o));
+  };
   try {
-    if (u.pathname === '/status') return send({ connected: state.connected, live: state.live, spent: state.spent });
+    if (u.pathname === '/' || u.pathname === '/index.html') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      return res.end(fs.readFileSync(path.join(__dirname, '..', 'web', 'index.html')));
+    }
+    if (u.pathname === '/status') return send({ connected: state.connected, live: state.live, spent: state.spent, listed: state.listed, maxListings: state.maxListings, paused: state.paused });
     if (u.pathname === '/rules') return send(rules.list());
     if (u.pathname === '/log') return send(state.log);
     if (u.pathname === '/holdings') return send(state.holdings);
     if (u.pathname === '/prices') return send(state.prices);
+    if (u.pathname === '/market') return send({ status: market.status(watch), items: market.list() });
+    if (u.pathname.startsWith('/market/')) { const m = market.get(decodeURIComponent(u.pathname.slice(8))); return m ? send(m) : send({ error: 'unknown item' }, 404); }
+    if (u.pathname === '/trades') {
+      const S = ledger.summary();
+      return send({ summary: { spent: S.spent, realizedProfit: S.realized, costListed: S.costListed, expectedRevenue: S.revListed, sold: S.sold, listed: S.listed, fee: ledger.d.fee }, trades: ledger.d.trades.slice(-100).reverse() });
+    }
     if (u.pathname === '/command' && req.method === 'POST') {
+      // Commands can spend money: only the bot's own page (or curl) may send them, never another website.
+      const origin = req.headers.origin;
+      const okOrigin = !origin || /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin);
+      if (!okOrigin || req.headers['x-bot'] !== '1') return send({ error: 'forbidden: commands only from the bot page (send header X-Bot: 1)' }, 403);
       let b = ''; for await (const d of req) b += d;
       return send({ result: await run(JSON.parse(b).command) });
     }
-    send({ error: 'not found', routes: ['/status', '/rules', '/log', '/holdings', '/prices', 'POST /command'] }, 404);
+    send({ error: 'not found', routes: ['/', '/market', '/market/<item>', '/trades', '/status', '/rules', '/log', '/holdings', '/prices', 'POST /command (header X-Bot: 1)'] }, 404);
   } catch (e) { send({ error: e.message }, 400); }
-}).listen(API_PORT, '127.0.0.1', () => log(`API on http://127.0.0.1:${API_PORT}`));
+}).listen(API_PORT, '127.0.0.1', () => log(`Website + API on http://127.0.0.1:${API_PORT}`));
 
 if (require.main === module) {
   if (!KEY) console.log('No API key: reading the auction house in game instead.');
   log(state.live ? 'LIVE mode' : 'DRY RUN (set LIVE=1 to spend money)');
   if (process.env.NO_CONNECT !== '1') connect().catch((e) => log('connect failed: ' + e.message));
-  setInterval(scan, SCAN_MS);
+  setInterval(() => withAh(scan), SCAN_MS);
+  if (KEY) marketApiLoop(); else marketGuiLoop();
+  setInterval(() => market.save(), 120000);
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, prompt: 'bot> ' });
   rl.prompt();
   rl.on('line', async (l) => { try { const r = await run(l); console.log(typeof r === 'string' ? r : JSON.stringify(r, null, 1)); } catch (e) { console.log('error:', e.message); } rl.prompt(); });
