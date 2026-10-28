@@ -2,10 +2,11 @@
 //   DONUTSMP_API_KEY=xxx node bot/index.js            (dry run, never spends)
 //   LIVE=1 ... node bot/index.js                       (really buys / sells)
 // Console commands: help | status | rules | buy <item> <maxPrice> [x2] | drop <item>
-//   | cmd <any /command> | scan | inv | sellnow <slot> <price> yes | buynow <item> <max> yes | peek <item> | inspectbuy <item> | live on|off | quit      API: http://127.0.0.1:8080
+//   | cmd <any /command> | scan | trades | fee <percent> | inv | sellnow <slot> <price> yes | buynow <item> <max> yes | peek <item> | inspectbuy <item> | live on|off | quit      API: http://127.0.0.1:8080
 const http = require('http');
 const readline = require('readline');
-const { Rules, parseBuy, clean } = require('./strategy');
+const { Rules, parseBuy, parsePrice, clean } = require('./strategy');
+const { Ledger } = require('./ledger');
 
 const KEY = process.env.DONUTSMP_API_KEY;
 const BASE = process.env.DONUTSMP_BASE || 'https://api.donutsmp.net/v1';
@@ -21,6 +22,8 @@ process.on('unhandledRejection', (e) => log('unhandled: ' + (e && e.message)));
 let ah = null, client = null;
 
 const log = (m) => { const l = `${new Date().toISOString().slice(11, 19)} ${m}`; state.log.push(l); state.log = state.log.slice(-200); console.log(l); };
+
+const ledger = new Ledger(log);
 
 async function api(p) {
   const r = await fetch(BASE + p, { headers: { Authorization: 'Bearer ' + KEY, Accept: 'application/json' } });
@@ -92,6 +95,8 @@ function pause(why) { if (!state.paused) { state.paused = why; log('BUYING PAUSE
 // Chat hints: an auction-house-full message pauses buying; a sale frees a slot.
 function watchChat(msg) {
   state.recentChat.push({ t: Date.now(), msg }); state.recentChat = state.recentChat.slice(-50);
+  const sale = /bought your (.+?) for \$\s*([\d,\.]+\s*[kmb]?)\b/i.exec(msg);
+  if (sale && ledger.markSold(sale[1].replace(/^\d+\s*/, ''), parsePrice(sale[2].replace(/[,\s]/g, '')))) log('ledger: sale recorded (' + sale[1] + ' for ' + sale[2] + ')');
   if (/(auction|listing|ah).*(full|limit|maximum|max)|(too many|cannot|can't|unable to).*(list|auction)|reached.*(limit|maximum)/i.test(msg)) pause('auction house full: ' + msg.slice(0, 80));
   else if (/\bsold\b|purchased your|bought your/i.test(msg) && state.listed > 0) {
     state.listed--;
@@ -144,7 +149,9 @@ async function balance() {
   const since = Date.now();
   ah.say('/bal');
   const m = await waitFor(() => state.recentChat.find((c) => c.t >= since && /you have \$\s*([\d,\.]+)/i.test(c.msg)), 4000);
-  return m ? parseFloat(/you have \$\s*([\d,\.]+)/i.exec(m.msg)[1].replace(/,/g, '')) : NaN;
+  const v = m ? parseFloat(/you have \$\s*([\d,\.]+)/i.exec(m.msg)[1].replace(/,/g, '')) : NaN;
+  if (v > 0) ledger.balance(v);
+  return v;
 }
 
 // Buy the cheapest plain `item` listing at or under maxUnit per item. Two clicks: the listing, then Confirm.
@@ -179,7 +186,9 @@ async function purchase(item, maxUnit) {
   ah.close();
   const after = await balance();
   const spent = before - after;
-  return { ok: spent > 0, spent: isNaN(spent) ? 'unknown' : spent, price: shownPrice, balanceBefore: before, balanceAfter: after, inventorySlot: ah.newSlot(inv0), chat };
+  const ok = spent > 0;
+  const tradeId = ok ? ledger.addPurchase({ item, qty: c.count, cost: spent, balanceBefore: before }) : undefined;
+  return { ok, spent: isNaN(spent) ? 'unknown' : spent, price: shownPrice, tradeId, balanceBefore: before, balanceAfter: after, inventorySlot: ah.newSlot(inv0), chat };
 }
 
 // Put the item from a hotbar slot in hand and list it: /ah sell <price>. Clicks Confirm if the server asks.
@@ -219,6 +228,7 @@ async function buy(h) {
     if (slot === null || slot === undefined) { log('bought, but could not find the item in the inventory; relist by hand'); return; }
     const rl = await relist(slot, price);
     log('relist result: ' + JSON.stringify(rl));
+    if (rl.chat.some((m) => /you listed/i.test(m)) && r.tradeId) ledger.setListed(r.tradeId, price);
   } catch (e) { log('buy failed: ' + e.message); ah.close(); }
 }
 
@@ -237,6 +247,8 @@ async function run(line) {
     case 'drop': return rules.remove(a[0]);
     case 'cmd': if (!client || !state.connected) return 'not connected yet'; ah.say(a.join(' ')); return 'sent; watch the log for the reply';
     case 'scan': return scan();
+    case 'trades': { const S = ledger.summary(); return { file: 'data/profit-vs-cost.xlsx', csv: 'data/trades.csv', trades: ledger.d.trades.length, spent: S.spent, realizedProfit: S.realized, sold: S.sold, listed: S.listed, fee: ledger.d.fee }; }
+    case 'fee': ledger.d.fee = Math.max(0, (+a[0] || 0) / 100); ledger.save(); return { fee: ledger.d.fee };
     case 'inv': return [...ah.inv].map(([slot, it]) => ({ slot, network_id: it.network_id, count: it.count, name: ah.nameOf(it) }));
     case 'sellnow': { // sellnow <hotbarSlot> <price> yes : hold that slot's item and run /ah sell <price>
       if (!state.connected) return 'not connected yet';

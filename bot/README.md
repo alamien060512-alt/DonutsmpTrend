@@ -27,3 +27,9 @@ Running a trading bot may break DonutSMP's rules; use at your own risk.
     pause | resume              stop / continue buying; `listed <n>` corrects the listing count
 
 Buying also pauses by itself when the server says the auction house is full.
+
+## Automatic trade log and spreadsheet
+Every purchase, relist and sale is recorded in `data/trades.json` and `data/trades.csv`, and
+`data/profit-vs-cost.xlsx` (Summary + Trades sheets with live formulas) is rebuilt after each change.
+Close the .xlsx in Excel if the bot reports it cannot update it. Console: `trades` (totals), `fee <percent>`.
+First run seeds the ledger from `bot/seed-trades.json`.
