@@ -20,6 +20,6 @@
   },
   "homepage": "https://github.com/alamien060512-alt/DonutsmpTrend#readme",
   "dependencies": {
-    "bedrock-protocol": "^3.59.0"
+    "bedrock-protocol": "^3.60.1"
   }
 }

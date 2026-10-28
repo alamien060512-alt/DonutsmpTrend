@@ -54,13 +54,17 @@ function connect() {
     host: HOST, port: PORT, username: process.env.XBOX_ACCOUNT || 'bot',
     profilesFolder: './data/auth', offline: false, raknetBackend: backend, skipPing: backend === 'jsp-raknet', ...(process.env.BEDROCK_VERSION && { version: process.env.BEDROCK_VERSION }),
     ...authOptions(),
-    conLog: () => {},
+    connectTimeout: 20000,
+    conLog: (m) => log('net: ' + m),
   });
   const { AhDriver } = require('./ah');
   ah = new AhDriver(client, log);
   client.on('join', () => { state.connected = true; log('joined server'); });
   client.on('spawn', () => log('spawned'));
   client.on('close', () => { state.connected = false; log('disconnected; retry in 30s'); setTimeout(connect, 30000); });
+  client.on('kick', (p) => log('KICKED by server: ' + (p.message || JSON.stringify(p))));
+  client.on('loggingIn', () => log('sent login'));
+  client.on('session', () => log('authenticated with Xbox'));
   client.on('error', (e) => log('client error: ' + e.message));
   client.on('text', (p) => { if (p.message) log('chat: ' + String(p.message).slice(0, 120)); });
 }
