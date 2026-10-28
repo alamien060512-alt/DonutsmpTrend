@@ -57,6 +57,7 @@ async function connect() {
     }
   }
   require('./msa-patch');
+  require('./crypto-patch');
   // jsp-raknet writes a malformed handshake packet when given a hostname, so use the IP.
   const ip = (await require('dns').promises.lookup(HOST, { family: 4 })).address;
   log(`server ${HOST} -> ${ip}:${PORT}`);
