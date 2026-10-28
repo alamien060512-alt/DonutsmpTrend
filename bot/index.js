@@ -2,7 +2,7 @@
 //   DONUTSMP_API_KEY=xxx node bot/index.js            (dry run, never spends)
 //   LIVE=1 ... node bot/index.js                       (really buys / sells)
 // Console commands: help | status | rules | buy <item> <maxPrice> [x2] | drop <item>
-//   | cmd <any /command> | scan | buynow <item> <max> yes | peek <item> | inspectbuy <item> | live on|off | quit      API: http://127.0.0.1:8080
+//   | cmd <any /command> | scan | inv | sellnow <slot> <price> yes | buynow <item> <max> yes | peek <item> | inspectbuy <item> | live on|off | quit      API: http://127.0.0.1:8080
 const http = require('http');
 const readline = require('readline');
 const { Rules, parseBuy, clean } = require('./strategy');
@@ -157,6 +157,7 @@ async function purchase(item, maxUnit) {
   if (!cands.length) { ah.close(); return { ok: false, why: 'no listing at or under ' + maxUnit } };
   const c = cands[0];
   const before = await balance();
+  const inv0 = ah.snapshot();
   ah.other.clear();
   log(`clicking listing: slot ${c.slot}, ${c.price} for ${c.count}`);
   ah.click(c.slot);
@@ -177,7 +178,22 @@ async function purchase(item, maxUnit) {
   ah.close();
   const after = await balance();
   const spent = before - after;
-  return { ok: spent > 0, spent: isNaN(spent) ? 'unknown' : spent, price: shownPrice, balanceBefore: before, balanceAfter: after, chat };
+  return { ok: spent > 0, spent: isNaN(spent) ? 'unknown' : spent, price: shownPrice, balanceBefore: before, balanceAfter: after, inventorySlot: ah.newSlot(inv0), chat };
+}
+
+// Put the item from a hotbar slot in hand and list it: /ah sell <price>. Clicks Confirm if the server asks.
+async function relist(slot, price) {
+  ah.select(slot);
+  await sleep(600);
+  ah.other.clear();
+  const since = Date.now();
+  ah.say('/ah sell ' + price);
+  const menu = await waitFor(() => ah.confirmMenu(), 3000);
+  let confirmed = false;
+  if (menu) { ah.clickItem(menu.confirm.item, menu.confirm.slot); confirmed = true; }
+  await sleep(2000);
+  const chat = state.recentChat.filter((m) => m.t >= since).map((m) => m.msg);
+  return { price, slot, confirmMenuSeen: !!menu, confirmed, chat, events: ah.events.slice(-6) };
 }
 
 async function buy(h) {
@@ -190,7 +206,10 @@ async function buy(h) {
     state.spent += typeof r.spent === 'number' ? r.spent : h.price;
     state.listed++;
     if (state.maxListings && state.listed >= state.maxListings) pause('listing limit reached (' + state.listed + '/' + state.maxListings + ')');
-    log('bought. NOT relisting automatically yet: relist by hand with  cmd /ah sell <price>  (item in hand)');
+    const slot = r.inventorySlot, price = rules.sellPrice(h.item, r.price / h.count, h.count);
+    if (slot === null || slot === undefined) { log('bought, but could not find the item in the inventory; relist by hand'); return; }
+    const rl = await relist(slot, price);
+    log('relist result: ' + JSON.stringify(rl));
   } catch (e) { log('buy failed: ' + e.message); ah.close(); }
 }
 
@@ -209,6 +228,12 @@ async function run(line) {
     case 'drop': return rules.remove(a[0]);
     case 'cmd': if (!client || !state.connected) return 'not connected yet'; ah.say(a.join(' ')); return 'sent; watch the log for the reply';
     case 'scan': return scan();
+    case 'inv': return [...ah.inv].map(([slot, it]) => ({ slot, network_id: it.network_id, count: it.count, name: ah.nameOf(it) }));
+    case 'sellnow': { // sellnow <hotbarSlot> <price> yes : hold that slot's item and run /ah sell <price>
+      if (!state.connected) return 'not connected yet';
+      if (a[a.length - 1] !== 'yes' || a.length < 3) return 'This LISTS an item for sale. Type: sellnow <hotbarSlot 0-8> <price> yes  (see slots with: inv)';
+      return relist(+a[0], a[1]);
+    }
     case 'buynow': { // buynow <item> <maxPrice> yes : really buys the cheapest plain listing at or under maxPrice per item
       if (!state.connected) return 'not connected yet';
       if (a[a.length - 1] !== 'yes') return 'This REALLY buys. Type: buynow <item> <maxPrice> yes';

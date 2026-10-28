@@ -124,6 +124,19 @@ class AhDriver {
       .map(([slot, it]) => ({ slot, name: this.nameOf(it), count: it.count, text: this.textOf(it).join(' | ').slice(0, 160) }));
     return { window: { id: this.win.id, type: this.win.type, slots: this.win.slots.size }, items };
   }
+  // slot -> "network_id x count": compare two snapshots to find where a bought item landed.
+  snapshot() { return new Map([...this.inv].map(([sl, it]) => [sl, `${it.network_id}x${it.count}`])); }
+  newSlot(before) {
+    for (const [sl, v] of this.snapshot()) if (before.get(sl) !== v) return sl;
+    return null;
+  }
+  // Put a hotbar item in hand (Bedrock mob_equipment). Items outside the hotbar can't be selected.
+  select(slot) {
+    const it = this.inv.get(slot);
+    if (!it) throw new Error('nothing in inventory slot ' + slot);
+    if (slot > 8) throw new Error('item is in main-inventory slot ' + slot + ', not the hotbar (0-8)');
+    this.c.queue('mob_equipment', { runtime_entity_id: this.c.entityId, item: it, slot, selected_slot: slot, window_id: 'inventory' });
+  }
   // Items of every extra window seen, with their slot numbers.
   describeOthers() {
     const out = {};
