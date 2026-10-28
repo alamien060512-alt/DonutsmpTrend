@@ -32,10 +32,17 @@ const toListing = (r) => ({
 
 // ---- bot connection (Xbox login: first run prints a microsoft.com/link code) ----
 function connect() {
+  // Phones (Termux) can't build raknet-native; fall back to the pure-JS RakNet.
+  let backend = process.env.RAKNET || 'raknet-native';
+  try { require('raknet-native'); } catch {
+    backend = 'jsp-raknet';
+    const Module = require('module'), load = Module._load;
+    Module._load = function (req, ...r) { return req === 'raknet-native' ? {} : load.call(this, req, ...r); };
+  }
   const bedrock = require('bedrock-protocol'); // lazy so the API/console work without it
   client = bedrock.createClient({
     host: HOST, port: PORT, username: process.env.XBOX_ACCOUNT || 'bot',
-    profilesFolder: './data/auth', offline: false, raknetBackend: process.env.RAKNET || 'raknet-native',
+    profilesFolder: './data/auth', offline: false, raknetBackend: backend,
     conLog: () => {},
   });
   const { AhDriver } = require('./ah');
