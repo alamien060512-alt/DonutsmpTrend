@@ -9,7 +9,7 @@ const { Rules, parsePrice, clean } = require('./strategy');
 
 const KEY = process.env.DONUTSMP_API_KEY;
 const BASE = process.env.DONUTSMP_BASE || 'https://api.donutsmp.net/v1';
-const HOST = process.env.SERVER_HOST || 'bedrock.donutsmp.net';
+const HOST = process.env.SERVER_HOST || 'donutsmp.net';
 const PORT = +process.env.SERVER_PORT || 19132;
 const API_PORT = +process.env.BOT_API_PORT || 8080;
 const SCAN_MS = +process.env.SCAN_MS || 15000;

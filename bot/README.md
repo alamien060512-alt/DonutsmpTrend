@@ -8,7 +8,7 @@ logs in as a **Bedrock (Xbox) account** with `bedrock-protocol` instead of runni
     LIVE=1 DONUTSMP_API_KEY=xxx npm run bot # spends real money
 
 First run prints a microsoft.com/link code; the token is cached in `data/auth`.
-Server defaults to `bedrock.donutsmp.net:19132` (override `SERVER_HOST`/`SERVER_PORT`).
+Server defaults to `donutsmp.net:19132` (override `SERVER_HOST`/`SERVER_PORT`).
 
 Console (the `bot>` prompt): `buy diamond 1.5k` (buy at or under 1.5k each, relist at 2x),
 `buy diamond 1.5k 3` (relist at 3x), `rules`, `drop diamond`, `cmd /balance`, `scan`, `live on|off`, `status`.
