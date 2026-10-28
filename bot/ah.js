@@ -56,14 +56,25 @@ class AhDriver {
       custom_names: [], cause: -1,
     }] });
   }
-  // Best-effort: pull lore lines out of a Bedrock item's NBT and find "Price: $1,234".
+  // All text found in an item's NBT (name + lore lines), colour codes removed.
+  textOf(it) {
+    const out = [];
+    const walk = (v) => {
+      if (typeof v === 'string') out.push(v.replace(/§./g, '').trim());
+      else if (Array.isArray(v)) v.forEach(walk);
+      else if (v && typeof v === 'object') Object.values(v).forEach(walk);
+    };
+    walk(it && (it.extra && it.extra.nbt || it.nbt));
+    return out.filter(Boolean);
+  }
+  // Price per listing: the first lore line that mentions "price" (or a $ amount) and has a number.
   priceOf(it) {
-    try {
-      const lore = JSON.stringify(it.extra && it.extra.nbt || it.nbt || {});
-      const m = /price[^\d$]*\$?\s*([\d,.]+)\s*([kmb]?)/i.exec(lore);
-      if (!m) return NaN;
-      return parseFloat(m[1].replace(/,/g, '')) * ({ '': 1, k: 1e3, m: 1e6, b: 1e9 })[m[2].toLowerCase()];
-    } catch { return NaN; }
+    const lines = this.textOf(it);
+    const line = lines.find((l) => /price/i.test(l) && /\d/.test(l)) || lines.find((l) => /\$\s*[\d]/.test(l));
+    if (!line) return NaN;
+    const m = /\$?\s*([\d][\d,]*(?:\.\d+)?)\s*([kmbKMB]?)/.exec(line.replace(/^.*?price\s*:?/i, ''));
+    if (!m) return NaN;
+    return parseFloat(m[1].replace(/,/g, '')) * ({ '': 1, k: 1e3, m: 1e6, b: 1e9 })[m[2].toLowerCase()];
   }
   close() {
     if (this.win) this.c.queue('container_close', { window_id: this.win.id, window_type: this.win.type, server: false });

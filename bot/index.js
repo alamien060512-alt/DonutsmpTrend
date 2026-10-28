@@ -2,7 +2,7 @@
 //   DONUTSMP_API_KEY=xxx node bot/index.js            (dry run, never spends)
 //   LIVE=1 ... node bot/index.js                       (really buys / sells)
 // Console commands: help | status | rules | buy <item> <maxPrice> [x2] | drop <item>
-//   | cmd <any /command> | scan | live on|off | quit      API: http://127.0.0.1:8080
+//   | cmd <any /command> | scan | peek <item> | live on|off | quit      API: http://127.0.0.1:8080
 const http = require('http');
 const readline = require('readline');
 const { Rules, parseBuy, clean } = require('./strategy');
@@ -169,6 +169,14 @@ async function run(line) {
     case 'drop': return rules.remove(a[0]);
     case 'cmd': if (!client || !state.connected) return 'not connected yet'; ah.say(a.join(' ')); return 'sent; watch the log for the reply';
     case 'scan': return scan();
+    case 'peek': { // peek <item>: show the raw text of the first listings so prices can be checked
+      if (!state.connected) return 'not connected yet';
+      const win = await ah.open('/ah ' + (a.join(' ') || 'diamond'));
+      const rows = [...win.slots].filter(([, it]) => it && it.network_id).slice(0, 12)
+        .map(([slot, it]) => ({ slot, count: it.count, price: ah.priceOf(it), text: ah.textOf(it).join(' | ').slice(0, 300) }));
+      ah.close();
+      return rows.length ? rows : 'no items found in the window (slots: ' + win.slots.size + ')';
+    }
     case 'live': state.live = a[0] === 'on'; return { live: state.live };
     case 'quit': process.exit(0);
     default: return line.trim().startsWith('/') ? 'to send an in-game command, type: cmd ' + line.trim() : 'unknown command; try help';
