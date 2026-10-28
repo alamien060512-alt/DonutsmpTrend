@@ -1,4 +1,4 @@
-// Usage: npm run ping [host] [port]   -> asks the server for its Bedrock status.
+// Usage: npm run pinghandshake [host] [port]   -> asks the server for its Bedrock status.
 const dgram = require('dgram');
 const host = process.argv[2] || process.env.SERVER_HOST || 'donutsmp.net';
 const port = +(process.argv[3] || process.env.SERVER_PORT || 19132);
