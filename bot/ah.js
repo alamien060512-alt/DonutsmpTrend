@@ -10,6 +10,8 @@ class AhDriver {
     this.win = null;          // { id, type, slots: Map<slot,item> }
     this.reqId = -1;          // item_stack_request ids are negative and decrease
     this.waiters = [];
+    this.responses = [];      // item_stack_response statuses, for inspection
+    client.on('item_stack_response', (p) => { for (const r of p.responses || []) this.responses.push({ status: r.status, id: r.request_id }); });
     client.on('container_open', (p) => {
       this.win = { id: p.window_id, type: p.window_type, slots: new Map() };
       this._wake();
@@ -84,6 +86,13 @@ class AhDriver {
     const m = /\$?\s*([\d][\d,]*(?:\.\d+)?)\s*([kmbKMB]?)/.exec(line.replace(/^.*?price\s*:?/i, ''));
     if (!m) return NaN;
     return parseFloat(m[1].replace(/,/g, '')) * ({ '': 1, k: 1e3, m: 1e6, b: 1e9 })[m[2].toLowerCase()];
+  }
+  // Describe the open window: id, type and every non-empty slot (name, count, text).
+  describe() {
+    if (!this.win) return { window: null };
+    const items = [...this.win.slots].filter(([, it]) => it && it.network_id)
+      .map(([slot, it]) => ({ slot, name: this.nameOf(it), count: it.count, text: this.textOf(it).join(' | ').slice(0, 160) }));
+    return { window: { id: this.win.id, type: this.win.type, slots: this.win.slots.size }, items };
   }
   close() {
     if (this.win) this.c.queue('container_close', { window_id: this.win.id, window_type: this.win.type, server: false });

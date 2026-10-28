@@ -2,7 +2,7 @@
 //   DONUTSMP_API_KEY=xxx node bot/index.js            (dry run, never spends)
 //   LIVE=1 ... node bot/index.js                       (really buys / sells)
 // Console commands: help | status | rules | buy <item> <maxPrice> [x2] | drop <item>
-//   | cmd <any /command> | scan | peek <item> | live on|off | quit      API: http://127.0.0.1:8080
+//   | cmd <any /command> | scan | peek <item> | inspectbuy <item> | live on|off | quit      API: http://127.0.0.1:8080
 const http = require('http');
 const readline = require('readline');
 const { Rules, parseBuy, clean } = require('./strategy');
@@ -170,6 +170,21 @@ async function run(line) {
     case 'drop': return rules.remove(a[0]);
     case 'cmd': if (!client || !state.connected) return 'not connected yet'; ah.say(a.join(' ')); return 'sent; watch the log for the reply';
     case 'scan': return scan();
+    case 'inspectbuy': { // inspectbuy <item>: click the cheapest listing and print what opens. Never confirms.
+      if (!state.connected) return 'not connected yet';
+      const item = clean(a.join(' ') || 'diamond');
+      const win = await ah.open('/ah ' + item.replace(/_/g, ' '));
+      const hit = [...win.slots].filter(([, it]) => it && it.network_id && clean(ah.nameOf(it)) === item && !ah.enchanted(it))
+        .sort((x, y) => ah.priceOf(x[1]) - ah.priceOf(y[1]))[0];
+      if (!hit) { ah.close(); return 'no plain ' + item + ' listing found'; }
+      ah.responses.length = 0;
+      const beforeId = win.id;
+      ah.click(hit[0]);
+      await new Promise((r) => setTimeout(r, 2500));
+      const out = { clickedSlot: hit[0], clickedPrice: ah.priceOf(hit[1]), windowChanged: !!ah.win && ah.win.id !== beforeId, responses: ah.responses.slice(0, 5), after: ah.describe() };
+      ah.close();
+      return out;
+    }
     case 'peek': { // peek <item>: show the raw text of the first listings so prices can be checked
       if (!state.connected) return 'not connected yet';
       const win = await ah.open('/ah ' + (a.join(' ') || 'diamond'));
