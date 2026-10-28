@@ -39,3 +39,44 @@ patchFile('Connection.js', [
   ['this.reliableReceiveWindow = new SlidingOrderedWindow(256);', 'this.reliableReceiveWindow = new SlidingOrderedWindow(16384);'],
   ['this.ackQueue.push(dataPacket.sequenceNumber);\n        this.receiveWindow.set(', 'if (dataPacket.sequenceNumber <= this.receiveWindow.windowEnd) this.ackQueue.push(dataPacket.sequenceNumber);\n        this.receiveWindow.set('],
 ]);
+
+// Deliver ReliableOrdered frames by orderIndex (per channel) after split reassembly, as RakNet
+// specifies. jsp-raknet orders by the reliable messageIndex instead, so a small packet sent
+// between the fragments of a big one is processed first, breaking the encrypted stream
+// ("Checksum mismatch"). messageIndex is now only used to drop duplicates.
+(function patchOrdering() {
+  const file = require.resolve('jsp-raknet/js/Connection.js');
+  let s = fs.readFileSync(file, 'utf8');
+  if (s.includes('handleOrdered(')) return;
+  const a = s.indexOf('    recievePacket(packet) {');
+  const b = s.indexOf('    handleSplit(packet) {');
+  if (a < 0 || b < 0) return;
+  const recv = `    recievePacket(packet) {
+        if (packet.isReliable()) {
+            const seen = this._seenReliable || (this._seenReliable = new Set());
+            if (seen.has(packet.messageIndex)) return;
+            seen.add(packet.messageIndex);
+            if (seen.size > 40000) { let n = 0; for (const k of seen) { seen.delete(k); if (++n > 20000) break; } }
+        }
+        this.handlePacket(packet);
+    }
+    handleOrdered(pk) {
+        const ch = pk.orderChannel || 0;
+        const next = this._nextOrder || (this._nextOrder = new Map());
+        const bufs = this._orderBuf || (this._orderBuf = new Map());
+        let st = next.get(ch) || 0;
+        if (pk.orderIndex < st) return;
+        let buf = bufs.get(ch);
+        if (!buf) bufs.set(ch, buf = new Map());
+        buf.set(pk.orderIndex, pk);
+        while (buf.has(st)) { const n = buf.get(st); buf.delete(st); st++; n.__ord = true; this.handlePacket(n); }
+        next.set(ch, st);
+    }
+`;
+  s = s.slice(0, a) + recv + s.slice(b);
+  s = s.replace('this.splitPackets.delete(packet.splitID);\n            this.handlePacket(encapsulated);',
+    'this.splitPackets.delete(packet.splitID);\n            encapsulated.reliability = packet.reliability; encapsulated.orderIndex = packet.orderIndex; encapsulated.orderChannel = packet.orderChannel; encapsulated.messageIndex = packet.messageIndex;\n            this.handlePacket(encapsulated);');
+  s = s.replace("            this.handleSplit(packet);\n            return;\n        }\n        const id = packet.buffer.readUInt8();",
+    "            this.handleSplit(packet);\n            return;\n        }\n        if (!packet.__ord && (packet.reliability === 3 || packet.reliability === 7)) { this.handleOrdered(packet); return; }\n        const id = packet.buffer.readUInt8();");
+  fs.writeFileSync(file, s);
+})();
