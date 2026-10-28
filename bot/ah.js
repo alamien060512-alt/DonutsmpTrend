@@ -20,6 +20,9 @@ class AhDriver {
       if (!this.other.has(id)) this.other.set(id, new Map());
       this.other.get(id).set(slot, it);
     };
+    this.inv = new Map();     // our own inventory: slot -> item (slots 0-8 are the hotbar)
+    client.on('inventory_content', (p) => { if (p.window_id === 'inventory') { this.inv.clear(); (p.input || []).forEach((it, i) => { if (it && it.network_id) this.inv.set(i, it); }); } });
+    client.on('inventory_slot', (p) => { if (p.window_id === 'inventory') { if (p.item && p.item.network_id) this.inv.set(p.slot, p.item); else this.inv.delete(p.slot); } });
     this.responses = [];      // item_stack_response statuses, for inspection
     client.on('item_stack_response', (p) => { ev('item_stack_response', (p.responses || []).map((r) => r.status).join(',')); for (const r of p.responses || []) this.responses.push({ status: r.status, id: r.request_id }); });
     client.on('container_open', (p) => {
