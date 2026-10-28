@@ -14,7 +14,23 @@ class AhDriver {
     const ev = (e, extra) => { this.events.push(`${new Date().toISOString().slice(14, 23)} ${e} ${extra || ''}`.trim()); this.events = this.events.slice(-25); };
     this.other = new Map();   // contents of windows we did not open ourselves (e.g. a confirm menu)
     this.pkts = {};
-    client.on('packet', (d) => { const n = d && d.data && d.data.name; if (n) this.pkts[n] = (this.pkts[n] || 0) + 1; });
+    this.timeline = [];       // every non-noisy packet with a short summary, for diagnosing a failed step
+    const noisyName = /chunk|entity|time|latency|attributes|level_|sound|move_|block|biome|score|player_list|add_player|animate|actor|tick|particle|event|camera|health|mob_|network_stack|set_title|update_soft_enum|available_commands|commands/;
+    client.on('packet', (d) => {
+      const n = d && d.data && d.data.name; if (!n) return;
+      this.pkts[n] = (this.pkts[n] || 0) + 1;
+      if (noisyName.test(n)) return;
+      const pr = d.data.params || {};
+      let brief = '';
+      if (n === 'text') brief = String(pr.message || '').replace(/§./g, '').slice(0, 100);
+      else if (n === 'command_output') brief = JSON.stringify((pr.output || []).map((o) => o.message_id + ' ' + (o.parameters || []).join(','))).slice(0, 140);
+      else if (n === 'disconnect') brief = String(pr.message || pr.reason || '').slice(0, 140);
+      else if (n === 'container_open' || n === 'container_close') brief = 'id=' + pr.window_id;
+      else if (n === 'modal_form_request') brief = String(pr.data || '').slice(0, 100);
+      else if (n === 'inventory_content' || n === 'inventory_slot') brief = 'id=' + pr.window_id;
+      this.timeline.push(`${new Date().toISOString().slice(17, 23)} ${n} ${brief}`.trim());
+      if (this.timeline.length > 200) this.timeline.shift();
+    });
     const noteOther = (id, slot, it) => {
       if (['inventory', 'offhand', 'armor', 'ui', 'hotbar', 'fixed_inventory', 'creative', 'first', 'none'].includes(String(id))) return;
       if (!this.other.has(id)) this.other.set(id, new Map());

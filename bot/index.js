@@ -193,7 +193,7 @@ async function relist(slot, price) {
   if (menu) { ah.clickItem(menu.confirm.item, menu.confirm.slot); confirmed = true; }
   await sleep(2000);
   const chat = state.recentChat.filter((m) => m.t >= since).map((m) => m.msg);
-  return { price, slot, confirmMenuSeen: !!menu, confirmed, chat, events: ah.events.slice(-6) };
+  return { price, slot, confirmMenuSeen: !!menu, confirmed, stillConnected: state.connected, chat, serverSaid: ah.timeline.filter((l) => l.slice(0, 6) >= new Date(since - 1000).toISOString().slice(17, 23)).slice(-25) };
 }
 
 async function buy(h) {
