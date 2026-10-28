@@ -54,6 +54,23 @@ async function scan() {
   busy = true;
   try {
     const hits = [];
+    if (!KEY) { // no API key: read the auction house in game
+      if (!state.connected) return [];
+      for (const r of rules.list()) {
+        const win = await ah.open('/ah ' + r.item.replace(/_/g, ' '));
+        for (const [slot, it] of win.slots) {
+          if (!it || !it.network_id) continue;
+          const price = ah.priceOf(it), count = it.count || 1;
+          const l = { item: r.item, price, count }, m = price > 0 && rules.matches(l);
+          if (m) hits.push({ ...l, unit: m.unit, rule: r, slot });
+          if (price > 0) (state.prices[r.item] ||= { low: Infinity }).low = Math.min(state.prices[r.item].low, price / count);
+        }
+        ah.close();
+      }
+      hits.sort((a, b) => a.unit - b.unit);
+      if (hits[0]) await buy(hits[0]);
+      return hits;
+    }
     for (const page of [1, 2, 3]) {
       for (const r of rowsOf(await api('/auction/list/' + page))) {
         const l = toListing(r), m = rules.matches(l);
@@ -74,7 +91,7 @@ async function buy(h) {
   try {
     const win = await ah.open('/ah ' + h.item.replace(/_/g, ' '));
     // Search results are sorted by price in the stock UI; slot 0 is the cheapest match.
-    const slot = [...win.slots.entries()].find(([, it]) => it && it.network_id)?.[0];
+    const slot = h.slot ?? [...win.slots.entries()].find(([, it]) => it && it.network_id)?.[0];
     if (slot === undefined) throw new Error('no listing slot found');
     ah.click(slot); await new Promise((r) => setTimeout(r, 600));
     ah.click(slot); // confirm screen reuses the first slot in the stock UI
@@ -122,7 +139,7 @@ http.createServer(async (req, res) => {
 }).listen(API_PORT, '127.0.0.1', () => log(`API on http://127.0.0.1:${API_PORT}`));
 
 if (require.main === module) {
-  if (!KEY) { console.error('Set DONUTSMP_API_KEY (get one with /api in-game)'); process.exit(1); }
+  if (!KEY) console.log('No API key: reading the auction house in game instead.');
   log(state.live ? 'LIVE mode' : 'DRY RUN (set LIVE=1 to spend money)');
   if (process.env.NO_CONNECT !== '1') connect();
   setInterval(scan, SCAN_MS);
