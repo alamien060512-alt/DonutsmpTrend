@@ -21,13 +21,14 @@ var t = setInterval(() => {
 // ---- handshake probe: same first packet the bot sends, at several MTU sizes ----
 const probe = dgram.createSocket('udp4');
 const names = { 0x06: 'OpenConnectionReply1 (OK)', 0x19: 'IncompatibleProtocolVersion', 0x14: 'NoFreeIncomingConnections', 0x17: 'ConnectionBanned' };
-const seen = {};
-probe.on('message', (m) => { const k = names[m[0]] || '0x' + m[0].toString(16); seen[k] = (seen[k] || 0) + 1; if (m[0] === 0x19) seen.serverProtocol = m[16]; });
+const seen = {}; let curMtu = 0;
+probe.on('message', (m) => { const k = names[m[0]] || '0x' + m[0].toString(16); seen[k] = (seen[k] || 0) + 1; if (m[0] === 0x06) (seen.workingMtu ||= []).push(curMtu); if (m[0] === 0x19) seen.serverProtocol = m[16]; });
 const protoVersion = +process.env.RAK_PROTOCOL || 11;
 setTimeout(() => {
-  [1400, 1200, 1000, 576].forEach((mtu, i) => setTimeout(() => {
+  [1492, 1400, 1200, 1000, 800, 600, 576].forEach((mtu, i) => setTimeout(() => {
+    curMtu = mtu;
     const b = Buffer.alloc(mtu - 28); b[0] = 0x05; magic.copy(b, 1); b[17] = protoVersion;
     probe.send(b, port, host);
-  }, i * 400));
-  setTimeout(() => { console.log('handshake probe (RakNet protocol ' + protoVersion + '):', Object.keys(seen).length ? JSON.stringify(seen) : 'NO REPLY to connection request'); process.exit(0); }, 3000);
+  }, i * 500));
+  setTimeout(() => { console.log('handshake probe (RakNet protocol ' + protoVersion + '):', Object.keys(seen).length ? JSON.stringify(seen) : 'NO REPLY to connection request'); process.exit(0); }, 4200);
 }, 100);
