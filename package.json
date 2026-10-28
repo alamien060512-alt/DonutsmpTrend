@@ -6,7 +6,8 @@
     "start": "node server.js",
     "bot": "node bot/index.js",
     "test": "node bot/test.js",
-    "pinghandshake": "node bot/pinghandshake.js"
+    "pinghandshake": "node bot/pinghandshake.js",
+    "rakdebug": "node bot/rakdebug.js"
   },
   "repository": {
     "type": "git",

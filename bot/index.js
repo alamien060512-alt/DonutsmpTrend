@@ -39,14 +39,19 @@ function authOptions() {
 }
 
 // ---- bot connection (Xbox login: first run prints a microsoft.com/link code) ----
+let stubbed = false;
 function connect() {
   // Phones (Termux) can't build raknet-native; fall back to the pure-JS RakNet.
   let backend = process.env.RAKNET || 'raknet-native';
-  try { require('raknet-native'); } catch {
+  try { if (stubbed) throw 0; require('raknet-native'); } catch {
+    stubbed = true;
     backend = 'jsp-raknet';
     require('./raknet-patch');
-    const Module = require('module'), load = Module._load;
-    Module._load = function (req, ...r) { return req === 'raknet-native' ? {} : load.call(this, req, ...r); };
+    if (!global.__rakStub) {
+      global.__rakStub = true;
+      const Module = require('module'), load = Module._load;
+      Module._load = function (req, ...r) { return req === 'raknet-native' ? {} : load.call(this, req, ...r); };
+    }
   }
   require('./msa-patch');
   const bedrock = require('bedrock-protocol'); // lazy so the API/console work without it
