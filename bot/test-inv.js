@@ -10,6 +10,7 @@ assert.strictEqual(ah.inv.size, 2);
 const before = ah.snapshot();
 c.emit('inventory_slot', { window_id: 'inventory', slot: 1, item: it(264, 1) });          // bought diamond lands in slot 1
 assert.strictEqual(ah.newSlot(before), 1);
+ah.select(0); assert.strictEqual(sent.length, 0);                                     // slot 0 already in hand: no packet
 ah.select(1);
 assert.strictEqual(sent[0][0], 'mob_equipment'); assert.strictEqual(sent[0][1].selected_slot, 1); assert.strictEqual(sent[0][1].runtime_entity_id, 7n);
 assert.throws(() => ah.select(9), /main-inventory/); assert.throws(() => ah.select(4), /nothing in/);

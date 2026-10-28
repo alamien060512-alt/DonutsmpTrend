@@ -20,6 +20,8 @@ class AhDriver {
       if (!this.other.has(id)) this.other.set(id, new Map());
       this.other.get(id).set(slot, it);
     };
+    this.selected = 0;        // hotbar slot in hand (a new Bedrock player starts on slot 0)
+    client.on('player_hotbar', (p) => { if (p.select_slot !== false && typeof p.selected_slot === 'number') this.selected = p.selected_slot; });
     this.inv = new Map();     // our own inventory: slot -> item (slots 0-8 are the hotbar)
     client.on('inventory_content', (p) => { if (p.window_id === 'inventory') { this.inv.clear(); (p.input || []).forEach((it, i) => { if (it && it.network_id) this.inv.set(i, it); }); } });
     client.on('inventory_slot', (p) => { if (p.window_id === 'inventory') { if (p.item && p.item.network_id) this.inv.set(p.slot, p.item); else this.inv.delete(p.slot); } });
@@ -138,7 +140,9 @@ class AhDriver {
     const it = this.inv.get(slot);
     if (!it) throw new Error('nothing in inventory slot ' + slot);
     if (slot > 8) throw new Error('item is in main-inventory slot ' + slot + ', not the hotbar (0-8)');
+    if (slot === this.selected) return;   // already in hand; send nothing
     this.c.queue('mob_equipment', { runtime_entity_id: this.c.entityId, item: it, slot, selected_slot: slot, window_id: 'inventory' });
+    this.selected = slot;
   }
   // Items of every extra window seen, with their slot numbers.
   describeOthers() {
