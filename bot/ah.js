@@ -56,6 +56,15 @@ class AhDriver {
       custom_names: [], cause: -1,
     }] });
   }
+  // Best-effort: pull lore lines out of a Bedrock item's NBT and find "Price: $1,234".
+  priceOf(it) {
+    try {
+      const lore = JSON.stringify(it.extra && it.extra.nbt || it.nbt || {});
+      const m = /price[^\d$]*\$?\s*([\d,.]+)\s*([kmb]?)/i.exec(lore);
+      if (!m) return NaN;
+      return parseFloat(m[1].replace(/,/g, '')) * ({ '': 1, k: 1e3, m: 1e6, b: 1e9 })[m[2].toLowerCase()];
+    } catch { return NaN; }
+  }
   close() {
     if (this.win) this.c.queue('container_close', { window_id: this.win.id, window_type: this.win.type, server: false });
     this.win = null;

@@ -4,7 +4,7 @@ Inspired by [cody-raves/Gonuts](https://github.com/cody-raves/Gonuts) (MIT), but
 logs in as a **Bedrock (Xbox) account** with `bedrock-protocol` instead of running inside a Java client.
 
     npm install
-    DONUTSMP_API_KEY=xxx npm run bot        # dry run: logs what it would buy
+    npm run bot   # no API key needed (it reads /ah in game); add DONUTSMP_API_KEY=xxx to use the API instead
     LIVE=1 DONUTSMP_API_KEY=xxx npm run bot # spends real money
 
 First run prints a microsoft.com/link code; the token is cached in `data/auth`.
