@@ -75,14 +75,18 @@ class AhDriver {
       origin: { type: 'player', uuid: '00000000-0000-0000-0000-000000000000', request_id: '', player_entity_id: 0n }, internal: false, version: '52',
     });
   }
-  async open(cmd = '/ah') {
-    this.close();               // tell the server to drop any window we may still hold
-    this.win = null; this.events.push('-- open ' + cmd);
-    await new Promise((r) => setTimeout(r, 400));
-    this.say(cmd);
-    try { await this._until(() => this.win && this.win.slots.size > 0); }
-    catch { throw new Error('timeout waiting for the window. Recent events: ' + this.events.slice(-8).join(' | ')); }
-    return this.win;
+  async open(cmd = '/ah', tries = 3) {
+    let last = '';
+    for (let i = 1; i <= tries; i++) {
+      this.close();               // tell the server to drop any window we may still hold
+      this.win = null; this.events.push('-- open ' + cmd + (i > 1 ? ' (retry ' + i + ')' : ''));
+      const mark = this.timeline.length;
+      await new Promise((r) => setTimeout(r, i === 1 ? 400 : 2000 * i));
+      this.say(cmd);
+      try { await this._until(() => this.win && this.win.slots.size > 0, 6000); return this.win; }
+      catch { last = this.timeline.slice(mark).filter((l) => !/inventory_|container_close/.test(l)).slice(-6).join(' | ') || '(server sent nothing)'; }
+    }
+    throw new Error('timeout waiting for the window after ' + tries + ' tries. Server said: ' + last);
   }
   nameOf(it) { return clean(it && (it.network_id ? it.__name || it.name : '') || ''); }
   // Click an item in a chest-style window (Java left-click = Bedrock "take" into the cursor).
