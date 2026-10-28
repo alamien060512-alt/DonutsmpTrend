@@ -48,6 +48,7 @@ function connect() {
     const Module = require('module'), load = Module._load;
     Module._load = function (req, ...r) { return req === 'raknet-native' ? {} : load.call(this, req, ...r); };
   }
+  require('./msa-patch');
   const bedrock = require('bedrock-protocol'); // lazy so the API/console work without it
   client = bedrock.createClient({
     host: HOST, port: PORT, username: process.env.XBOX_ACCOUNT || 'bot',
