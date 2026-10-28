@@ -99,7 +99,11 @@ class AhDriver {
   click(slot, count) { this.clickItem(this.win.slots.get(slot), slot, count); }
   // The confirm menu the server opens after a listing click: { id, confirm:{slot,item}, cancel:{slot,item}, shown:{slot,item} }.
   confirmMenu() {
-    for (const [id, slots] of this.other) {
+    // Look in our own window ("first") as well as any extra windows.
+    const wins = [];
+    if (this.win) wins.push([this.win.id, this.win.slots]);
+    for (const [id, slots] of this.other) wins.push([id, slots]);
+    for (const [id, slots] of wins) {
       const find = (name) => [...slots].find(([, it]) => it && it.network_id && this.nameOf(it).toLowerCase() === name);
       const ok = find('confirm'), no = find('cancel');
       if (ok && no) {

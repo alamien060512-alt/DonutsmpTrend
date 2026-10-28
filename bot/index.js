@@ -185,15 +185,21 @@ async function purchase(item, maxUnit) {
 async function relist(slot, price) {
   ah.select(slot);
   await sleep(600);
-  ah.other.clear();
+  ah.other.clear(); ah.win = null;
   const since = Date.now();
   ah.say('/ah sell ' + price);
-  const menu = await waitFor(() => ah.confirmMenu(), 3000);
-  let confirmed = false;
+  // The server answers with a window (a sell menu). Click Confirm if we can find it.
+  const menu = await waitFor(() => ah.confirmMenu(), 4000);
+  let confirmed = false, windowSeen = null;
   if (menu) { ah.clickItem(menu.confirm.item, menu.confirm.slot); confirmed = true; }
-  await sleep(2000);
+  else { await sleep(500); windowSeen = ah.describe(); }
+  await sleep(2500);
   const chat = state.recentChat.filter((m) => m.t >= since).map((m) => m.msg);
-  return { price, slot, confirmMenuSeen: !!menu, confirmed, stillConnected: state.connected, chat, serverSaid: ah.timeline.filter((l) => l.slice(0, 6) >= new Date(since - 1000).toISOString().slice(17, 23)).slice(-25) };
+  const stillOpen = ah.describe();
+  ah.close();
+  return { price, slot, menuShown: menu ? menu.shown && ah.textOf(menu.shown.item).join(' | ') : null, confirmed, stillConnected: state.connected, chat,
+    windowIfNoConfirmFound: windowSeen, windowAfterClick: confirmed ? stillOpen.window : undefined,
+    serverSaid: ah.timeline.filter((l) => l.slice(0, 6) >= new Date(since - 1000).toISOString().slice(17, 23)).slice(-25) };
 }
 
 async function buy(h) {
