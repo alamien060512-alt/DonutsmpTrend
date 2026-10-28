@@ -16,7 +16,7 @@ class AhDriver {
       this.win = { id: p.window_id, type: p.window_type, slots: new Map() };
       this._wake();
     });
-    client.on('container_close', () => { this.win = null; });
+    client.on('container_close', (p) => { if (this.win && p.window_id === this.win.id) this.win = null; });
     client.on('inventory_content', (p) => {
       if (!this.win || p.window_id !== this.win.id) return;
       p.input.forEach((it, i) => this.win.slots.set(i, it));
