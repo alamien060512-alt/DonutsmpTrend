@@ -9,7 +9,8 @@ const ip = require('child_process').execFileSync('node', ['-e', "require('dns').
 console.log('using IP', ip);
 const c = new Client(ip, port);
 const handle = c.handle.bind(c);
-c.handle = (buf, r) => { console.log(at(), '<-', names[buf[0]] || (buf[0] > 0x80 ? 'datagram 0x' + buf[0].toString(16) : '0x' + buf[0].toString(16)), buf.length + ' bytes'); return handle(buf, r); };
+c.handle = (buf, r) => { if (buf[0] === 6) console.log('   reply1 bytes:', buf.toString('hex'));
+  console.log(at(), '<-', names[buf[0]] || (buf[0] > 0x80 ? 'datagram 0x' + buf[0].toString(16) : '0x' + buf[0].toString(16)), buf.length + ' bytes'); return handle(buf, r); };
 const send = c.sendBuffer.bind(c);
 c.sendBuffer = (b, to) => { console.log(at(), '->', '0x' + b[0].toString(16), b.length + ' bytes'); return send(b, to); };
 c.on('connecting', (i) => console.log(at(), 'connecting', JSON.stringify(i)));
