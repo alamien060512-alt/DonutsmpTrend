@@ -42,7 +42,7 @@ function connect() {
   const bedrock = require('bedrock-protocol'); // lazy so the API/console work without it
   client = bedrock.createClient({
     host: HOST, port: PORT, username: process.env.XBOX_ACCOUNT || 'bot',
-    profilesFolder: './data/auth', offline: false, raknetBackend: backend,
+    profilesFolder: './data/auth', offline: false, raknetBackend: backend, skipPing: backend === 'jsp-raknet', ...(process.env.BEDROCK_VERSION && { version: process.env.BEDROCK_VERSION }),
     conLog: () => {},
   });
   const { AhDriver } = require('./ah');
