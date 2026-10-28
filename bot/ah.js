@@ -48,7 +48,13 @@ class AhDriver {
       this.win = { id: p.window_id, type: p.window_type, slots: new Map() };
       this._wake();
     });
-    client.on('container_close', (p) => { ev('container_close', `id=${p.window_id} (ours=${this.win && this.win.id})`); if (this.win && p.window_id === this.win.id) this.win = null; });
+    client.on('container_close', (p) => {
+      // A real client answers a server-side close; otherwise the server may think a menu is still open.
+      try { client.queue('container_close', { window_id: p.window_id, window_type: p.window_type, server: false }); } catch {}
+      this.other.delete(p.window_id);
+      this.container_close_inner(p);
+    });
+    this.container_close_inner = (p) => { ev('container_close', `id=${p.window_id} (ours=${this.win && this.win.id})`); if (this.win && p.window_id === this.win.id) this.win = null; };
     client.on('inventory_content', (p) => {
       (p.input || []).forEach((it, i) => noteOther(p.window_id, i, it));
       ev('inventory_content', `id=${p.window_id} items=${(p.input || []).filter((x) => x && x.network_id).length}/${(p.input || []).length}`);
@@ -78,7 +84,7 @@ class AhDriver {
   async open(cmd = '/ah', tries = 3) {
     let last = '';
     for (let i = 1; i <= tries; i++) {
-      this.close();               // tell the server to drop any window we may still hold
+      this.closeAll();            // tell the server to drop any window we may still hold
       this.win = null; this.events.push('-- open ' + cmd + (i > 1 ? ' (retry ' + i + ')' : ''));
       const mark = this.timeline.length;
       await new Promise((r) => setTimeout(r, i === 1 ? 400 : 2000 * i));
@@ -182,6 +188,13 @@ class AhDriver {
     const noisy = /chunk|entity|time|latency|attributes|level_|sound|move_|block|biome|score|player_list|add_player|animate|actor|tick|particle|event|camera|health|mob_/;
     return Object.fromEntries(Object.entries(this.pkts).filter(([n]) => !noisy.test(n)));
   }
+  // Close one window by id (e.g. a confirm menu); safe to call for an id the server already closed.
+  closeWindow(id) {
+    try { this.c.queue('container_close', { window_id: id, window_type: 'container', server: false }); } catch {}
+    this.other.delete(id);
+    if (this.win && this.win.id === id) this.win = null;
+  }
+  closeAll() { for (const id of [...this.other.keys()]) this.closeWindow(id); this.close(); }
   close() {
     if (this.win) this.c.queue('container_close', { window_id: this.win.id, window_type: this.win.type, server: false });
     this.win = null;

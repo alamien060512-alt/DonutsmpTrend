@@ -175,6 +175,7 @@ async function purchase(item, maxUnit) {
   ah.clickItem(menu.confirm.item, menu.confirm.slot);
   await sleep(2500);
   const chat = state.recentChat.filter((m) => m.t >= since).map((m) => m.msg);
+  ah.closeWindow(menu.id);
   ah.close();
   const after = await balance();
   const spent = before - after;
@@ -196,7 +197,8 @@ async function relist(slot, price) {
   await sleep(2500);
   const chat = state.recentChat.filter((m) => m.t >= since).map((m) => m.msg);
   const stillOpen = ah.describe();
-  ah.close();
+  if (menu) ah.closeWindow(menu.id);
+  ah.closeAll();
   return { price, slot, menuShown: menu ? menu.shown && ah.textOf(menu.shown.item).join(' | ') : null, confirmed, stillConnected: state.connected, chat,
     windowIfNoConfirmFound: windowSeen, windowAfterClick: confirmed ? stillOpen.window : undefined,
     serverSaid: ah.timeline.filter((l) => l.slice(0, 6) >= new Date(since - 1000).toISOString().slice(17, 23)).slice(-25) };

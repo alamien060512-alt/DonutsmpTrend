@@ -17,3 +17,16 @@ assert.throws(() => ah.select(9), /main-inventory/); assert.throws(() => ah.sele
 c.emit('inventory_slot', { window_id: 'inventory', slot: 1, item: { network_id: 0, count: 0 } });
 assert.strictEqual(ah.inv.has(1), false);
 console.log('inventory ok');
+
+// Server-side window closes are acknowledged, and closeAll closes stray windows.
+const c2 = new EventEmitter(); const out = []; c2.queue = (n, p) => out.push([n, p]); c2.entityId = 1n;
+const ah2 = new AhDriver(c2, () => {});
+c2.emit('inventory_content', { window_id: 2, input: [it(7, 1)] });
+assert.ok(ah2.other.has(2));
+c2.emit('container_close', { window_id: 2, window_type: 'container' });
+assert.deepStrictEqual(out[0], ['container_close', { window_id: 2, window_type: 'container', server: false }]);
+assert.ok(!ah2.other.has(2));
+c2.emit('inventory_content', { window_id: 6, input: [it(8, 1)] });
+ah2.closeAll();
+assert.ok(out.some(([n, p]) => n === 'container_close' && p.window_id === 6));
+console.log('window closing ok');
