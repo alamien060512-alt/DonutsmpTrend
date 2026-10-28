@@ -64,7 +64,7 @@ async function connect() {
   const bedrock = require('bedrock-protocol'); // lazy so the API/console work without it
   client = bedrock.createClient({
     host: ip, port: PORT, username: process.env.XBOX_ACCOUNT || 'bot',
-    profilesFolder: './data/auth', offline: false, raknetBackend: backend, skipPing: backend === 'jsp-raknet', ...(process.env.BEDROCK_VERSION && { version: process.env.BEDROCK_VERSION }),
+    profilesFolder: './data/auth', offline: false, raknetBackend: backend, skipPing: backend === 'jsp-raknet', version: process.env.BEDROCK_VERSION || require('bedrock-protocol/src/options').CURRENT_VERSION, // DonutSMP is newer than the library; the newest known version is accepted
     ...authOptions(),
     connectTimeout: 20000,
     conLog: (m) => log('net: ' + m),
