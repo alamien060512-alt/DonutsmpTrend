@@ -9,12 +9,12 @@ const ip = require('child_process').execFileSync('node', ['-e', "require('dns').
 console.log('using IP', ip);
 const c = new Client(ip, port);
 const handle = c.handle.bind(c);
-c.handle = (buf, r) => { if (buf[0] === 6) console.log('   reply1 bytes:', buf.toString('hex'));
+c.handle = (buf, r) => { if (buf[0] === 6 || (buf[0] >= 0x80 && buf[0] !== 0xc0 && buf[0] !== 0xa0)) console.log('   bytes:', buf.toString('hex'));
   console.log(at(), '<-', names[buf[0]] || (buf[0] > 0x80 ? 'datagram 0x' + buf[0].toString(16) : '0x' + buf[0].toString(16)), buf.length + ' bytes'); return handle(buf, r); };
 const send = c.sendBuffer.bind(c);
-c.sendBuffer = (b, to) => { console.log(at(), '->', '0x' + b[0].toString(16), b.length + ' bytes'); return send(b, to); };
+c.sendBuffer = (b, to) => { if (b[0] === 0x80 && b.length > 20) console.log('   bytes:', b.toString('hex')); console.log(at(), '->', '0x' + b[0].toString(16), b.length + ' bytes'); return send(b, to); };
 c.on('connecting', (i) => console.log(at(), 'connecting', JSON.stringify(i)));
 c.on('connected', () => { console.log(at(), 'RAKNET CONNECTED - handshake is fine'); process.exit(0); });
 c.on('error', (e) => console.log(at(), 'error', e));
 c.connect().catch((e) => console.log('connect error', e));
-setTimeout(() => { console.log(at(), 'GAVE UP: no full connection'); process.exit(1); }, 20000);
+setTimeout(() => { console.log(at(), 'GAVE UP: no full connection'); process.exit(1); }, 12000);
