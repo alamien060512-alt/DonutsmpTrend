@@ -88,6 +88,35 @@ class AhDriver {
     }
     return null;
   }
+  // Item NBT as a plain object: { display: { Name, Lore: [...] }, ench: [...] }, or {}.
+  plain(it) {
+    try {
+      const nbt = it && (it.extra && it.extra.nbt || it.nbt);
+      if (!nbt) return {};
+      return require('prismarine-nbt').simplify(nbt.nbt || nbt) || {};
+    } catch { return {}; }
+  }
+  // Display name, colour codes removed ('' when the item has none).
+  nameOf(it) {
+    const d = this.plain(it).display || {};
+    return String(d.Name || '').replace(/§./g, '').trim();
+  }
+  enchanted(it) { const p = this.plain(it); return !!((p.ench && p.ench.length) || (p.Enchantments && p.Enchantments.length)); }
+  // Name + lore lines as text, colour codes removed.
+  textOf(it) {
+    const d = this.plain(it).display || {};
+    const lore = Array.isArray(d.Lore) ? d.Lore : (d.Lore ? [d.Lore] : []);
+    return [d.Name, ...lore].filter(Boolean).map((x) => String(x).replace(/§./g, '').trim());
+  }
+  // Price per listing: the first lore line that mentions "price" (or a $ amount) and has a number.
+  priceOf(it) {
+    const lines = this.textOf(it);
+    const line = lines.find((l) => /price/i.test(l) && /\d/.test(l)) || lines.find((l) => /\$\s*[\d]/.test(l));
+    if (!line) return NaN;
+    const m = /\$?\s*([\d][\d,]*(?:\.\d+)?)\s*([kmbKMB]?)/.exec(line.replace(/^.*?price\s*:?/i, ''));
+    if (!m) return NaN;
+    return parseFloat(m[1].replace(/,/g, '')) * ({ '': 1, k: 1e3, m: 1e6, b: 1e9 })[m[2].toLowerCase()];
+  }
   // Describe the open window: id, type and every non-empty slot (name, count, text).
   describe() {
     if (!this.win) return { window: null };
