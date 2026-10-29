@@ -165,14 +165,15 @@ async function balance() {
 
 // Buy the cheapest plain `item` listing at or under maxUnit per item. Two clicks: the listing, then Confirm.
 async function purchase(item, maxUnit) {
-  const before = await balance();      // read it first: the AH window can refresh while we wait
+  const balP = balance();              // ask for the balance at the same time as opening the AH (saves ~2s)
   const win = await ah.open('/ah ' + item.replace(/_/g, ' '));
   const cands = [...win.slots].filter(([, it]) => it && it.network_id && clean(ah.nameOf(it)) === item && !ah.enchanted(it))
     .map(([slot, it]) => ({ slot, it, price: ah.priceOf(it), count: it.count || 1 }))
     .filter((c) => c.price > 0 && c.price / c.count <= maxUnit)
     .sort((x, y) => x.price / x.count - y.price / y.count);
-  if (!cands.length) { ah.close(); return { ok: false, why: 'no listing at or under ' + maxUnit } };
+  if (!cands.length) { ah.close(); await balP; return { ok: false, why: 'no listing at or under ' + maxUnit + ' (gone, or sold to someone else)' } };
   const c = cands[0];
+  const before = await balP;            // its reply has normally arrived while the window opened
   const inv0 = ah.snapshot();
   ah.other.clear();
   log(`clicking listing: slot ${c.slot}, ${c.price} for ${c.count}`);
