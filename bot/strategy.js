@@ -11,10 +11,10 @@ function parsePrice(s) {
 
 class Rules {
   constructor() { this.rules = new Map(); }
-  add(item, maxPrice, sellMultiple = 2, maxStacks = 1) {
+  add(item, maxPrice, sellMultiple = 2, sellUnit = null) {
     const key = clean(item);
     if (!key || !(maxPrice > 0)) throw new Error('need an item and a positive price');
-    const r = { item: key, maxPrice, sellMultiple, maxStacks };
+    const r = { item: key, maxPrice, sellMultiple, sellUnit };
     this.rules.set(key, r);
     return r;
   }
@@ -29,9 +29,25 @@ class Rules {
   }
   sellPrice(item, paidUnit, count) {
     const r = this.rules.get(clean(item));
+    if (r && r.sellUnit) return Math.floor(r.sellUnit * count); // fixed per-item sell price
     const mult = r ? r.sellMultiple : 2;
     return Math.floor(paidUnit * mult * count);
   }
 }
 
-module.exports = { Rules, parsePrice, clean };
+// buy <item> <maxPrice> [sell <unitPrice> | <multiple>]
+function parseBuy(args) {
+  const [item, max, a, b] = args;
+  const maxPrice = parsePrice(max);
+  if (!item || !(maxPrice > 0)) throw new Error('usage: buy <item> <maxPrice> [sell <price> | <multiple>]');
+  if (a === 'sell') {
+    const sellUnit = parsePrice(b);
+    if (!(sellUnit > 0)) throw new Error('usage: buy <item> <maxPrice> sell <price>');
+    return { item, maxPrice, sellMultiple: 2, sellUnit };
+  }
+  const sellMultiple = a === undefined ? 2 : parseFloat(a);
+  if (!(sellMultiple > 0)) throw new Error('multiple must be a positive number, e.g. 1.02');
+  return { item, maxPrice, sellMultiple, sellUnit: null };
+}
+
+module.exports = { Rules, parsePrice, parseBuy, clean };
